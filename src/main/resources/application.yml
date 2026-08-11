@@ -3,8 +3,8 @@ server:
 
 logging:
   pattern:
-    # 在 Spring 默认格式基础上加 [traceId]，与响应头 X-Request-Id 对应
-    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p ${PID:- } --- [%15.15t] [%X{traceId:-}] %-40.40logger{39} : %m%n"
+    # 在 Spring 默认格式基础上加 [traceId][caller]，分别对应 X-Request-Id / X-Caller 请求头
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p ${PID:- } --- [%15.15t] [%X{traceId:-}][%X{caller:-}] %-40.40logger{39} : %m%n"
 
 spring:
   application:
