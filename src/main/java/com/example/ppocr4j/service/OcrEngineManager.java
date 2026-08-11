@@ -1,5 +1,7 @@
 package com.example.ppocr4j.service;
 
+import com.example.ppocr4j.exception.OcrException;
+import com.example.ppocr4j.web.ErrorCode;
 import net.dreamlu.mica.ai.ppocr.config.PPOcrV6Config;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Engine;
 import org.slf4j.Logger;
@@ -109,10 +111,11 @@ public class OcrEngineManager implements DisposableBean {
     public PPOcrV6Engine getEngine(String tier) {
         String t = (tier == null || tier.isBlank()) ? defaultTier : tier.toLowerCase();
         if (!TIERS.contains(t)) {
-            throw new IllegalArgumentException("未知模型档次: " + tier + "，可选值: " + TIERS);
+            throw new OcrException(ErrorCode.INVALID_PARAM, "未知模型档次: " + tier + "，可选值: " + TIERS);
         }
         if (!isAvailable(t)) {
-            throw new IllegalArgumentException("模型档次 " + t + " 的文件未下载，请参考 README 下载到 models/ppocr-v6/" + t + "/");
+            throw new OcrException(ErrorCode.TIER_UNAVAILABLE,
+                    "模型档次 " + t + " 的文件未下载，请参考 README 下载到 models/ppocr-v6/" + t + "/");
         }
         return engines.computeIfAbsent(t, key -> {
             Path dir = MODEL_ROOT.resolve(key);

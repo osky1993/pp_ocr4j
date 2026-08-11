@@ -1,14 +1,12 @@
 package com.example.ppocr4j.web;
 
+import com.example.ppocr4j.exception.OcrException;
 import com.example.ppocr4j.service.OcrEngineManager;
 import com.example.ppocr4j.service.OcrService;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Result;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -37,10 +35,10 @@ public class OcrController {
      * </ul></p>
      */
     @GetMapping("/api/ocr/tiers")
-    public Map<String, Object> tiers() {
-        return Map.of(
+    public ApiResult<Map<String, Object>> tiers() {
+        return ApiResult.ok(Map.of(
                 "defaultTier", engineManager.getDefaultTier(),
-                "tiers", engineManager.listTiers());
+                "tiers", engineManager.listTiers()));
     }
 
     /**
@@ -59,15 +57,15 @@ public class OcrController {
      * @param tier 模型档次（tiny/small/medium，可选；为空按默认）
      */
     @PostMapping("/api/ocr")
-    public OcrResponse ocr(@RequestParam("file") MultipartFile file,
-                           @RequestParam(value = "tier", required = false) String tier) throws IOException {
+    public ApiResult<OcrResponse> ocr(@RequestParam("file") MultipartFile file,
+                                      @RequestParam(value = "tier", required = false) String tier) throws IOException {
         if (file.isEmpty()) {
-            throw new IllegalArgumentException("上传文件为空");
+            throw new OcrException(ErrorCode.INVALID_PARAM, "上传文件为空");
         }
         long start = System.currentTimeMillis();
         List<PPOcrV6Result> results = ocrService.recognize(file.getBytes(), tier);
-        return OcrResponse.of(file.getOriginalFilename(), resolvedTier(tier), results,
-                System.currentTimeMillis() - start);
+        return ApiResult.ok(OcrResponse.of(file.getOriginalFilename(), resolvedTier(tier), results,
+                System.currentTimeMillis() - start));
     }
 
     /**
@@ -78,11 +76,11 @@ public class OcrController {
      * @param tier 选择档次（可选）
      */
     @GetMapping("/api/ocr/demo")
-    public OcrResponse demo(@RequestParam(value = "tier", required = false) String tier) {
+    public ApiResult<OcrResponse> demo(@RequestParam(value = "tier", required = false) String tier) {
         long start = System.currentTimeMillis();
         List<PPOcrV6Result> results = ocrService.recognizeFile("test_images/1.png", tier);
-        return OcrResponse.of("test_images/1.png", resolvedTier(tier), results,
-                System.currentTimeMillis() - start);
+        return ApiResult.ok(OcrResponse.of("test_images/1.png", resolvedTier(tier), results,
+                System.currentTimeMillis() - start));
     }
 
     /**
@@ -95,17 +93,5 @@ public class OcrController {
      */
     private String resolvedTier(String tier) {
         return (tier == null || tier.isBlank()) ? engineManager.getDefaultTier() : tier.toLowerCase();
-    }
-
-    /**
-     * 将业务侧可预期的参数错误映射为 400 语义，避免返回 500。
-     *
-     * @param e 参数/状态异常
-     * @return 错误提示字符串
-     */
-    @ExceptionHandler(IllegalArgumentException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Map<String, String> badRequest(IllegalArgumentException e) {
-        return Map.of("error", e.getMessage());
     }
 }

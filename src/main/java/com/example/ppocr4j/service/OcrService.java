@@ -1,5 +1,7 @@
 package com.example.ppocr4j.service;
 
+import com.example.ppocr4j.exception.OcrException;
+import com.example.ppocr4j.web.ErrorCode;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Result;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
@@ -43,7 +45,7 @@ public class OcrService {
         // MatOfByte 只做临时封装，真正数据放在 Mat image 中。
         Mat image = Imgcodecs.imdecode(new MatOfByte(imageBytes), Imgcodecs.IMREAD_COLOR);
         if (image.empty()) {
-            throw new IllegalArgumentException("无法解码图片，请上传 png/jpg 等常见格式");
+            throw new OcrException(ErrorCode.IMAGE_DECODE_ERROR, "无法解码图片，请上传 png/jpg 等常见格式");
         }
         try {
             // 懒加载按档次引擎：首次请求可触发模型加载，后续复用同实例。
@@ -61,7 +63,7 @@ public class OcrService {
         // 直接从本地路径读取，适用于 demo 场景或服务端脚本触发识别。
         Mat image = Imgcodecs.imread(path);
         if (image.empty()) {
-            throw new IllegalArgumentException("图片不存在或无法读取: " + path);
+            throw new OcrException(ErrorCode.INVALID_PARAM, "图片不存在或无法读取: " + path);
         }
         try {
             // 同 recognize()，按 tier 选择器路由到默认或指定模型档次。

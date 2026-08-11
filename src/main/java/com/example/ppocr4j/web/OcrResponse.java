@@ -7,7 +7,8 @@ import java.util.List;
 /**
  * OCR 接口返回结构。box 为文字框四个顶点坐标 [[x,y] * 4]，按阅读顺序排序。
  */
-public record OcrResponse(String source, String tier, int count, long costMs, List<Item> results) {
+public record OcrResponse(String source, String tier, int count, long costMs,
+                          String fullText, List<Item> results) {
 
     /**
      * 单条识别结果项。
@@ -32,6 +33,9 @@ public record OcrResponse(String source, String tier, int count, long costMs, Li
      */
     public static OcrResponse of(String source, String tier, List<PPOcrV6Result> results, long costMs) {
         List<Item> items = results.stream().map(Item::from).toList();
-        return new OcrResponse(source, tier, items.size(), costMs, items);
+        // fullText：按阅读顺序换行拼接的整页文本，供只关心全文的调用方直接取用
+        String fullText = results.stream().map(PPOcrV6Result::text)
+                .collect(java.util.stream.Collectors.joining("\n"));
+        return new OcrResponse(source, tier, items.size(), costMs, fullText, items);
     }
 }

@@ -198,7 +198,10 @@
   async function initTiers() {
     try {
       // 先拉取后端档次能力：available 决定是否可点击，isDefault 决定初始选中
-      const data = await (await fetch('/api/ocr/tiers')).json();
+      // 后端统一响应结构 {code, message, traceId, data}，取 data 字段
+      const body = await (await fetch('/api/ocr/tiers')).json();
+      if (body.code !== 0) throw new Error(body.message);
+      const data = body.data;
       selectedTier = data.defaultTier;
       data.tiers.forEach(t => t.loaded && loadedTiers.add(t.tier));
       tierGroup.innerHTML = data.tiers.map(t => `
@@ -323,8 +326,10 @@
       if (selectedTier) fd.append('tier', selectedTier);
       // 返回值中的 count/costMs/results 用于页面摘要与可视化渲染
       const resp = await fetch('/api/ocr', { method: 'POST', body: fd });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      const respBody = await resp.json();
+      // 统一响应结构：code !== 0 时 message 为错误信息
+      if (!resp.ok || respBody.code !== 0) throw new Error(respBody.message || ('HTTP ' + resp.status));
+      const data = respBody.data;
       results = data.results;
       activeIndex = -1;
       loadedTiers.add(data.tier);
