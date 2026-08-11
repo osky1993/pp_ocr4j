@@ -140,6 +140,8 @@
     <div class="toolbar">
       <button id="ocrBtn" class="btn-primary" disabled>开始识别</button>
       <button id="resetBtn" class="btn-ghost">重新选择</button>
+      <button id="rotateLBtn" class="btn-ghost" disabled title="向左旋转 90°">↺ 左转</button>
+      <button id="rotateRBtn" class="btn-ghost" disabled title="向右旋转 90°">↻ 右转</button>
       <div class="tier-group" id="tierGroup" title="模型档次"></div>
       <span class="tier-desc" id="tierDesc"></span>
       <label><input type="checkbox" id="showBoxes" checked> 显示文字框</label>
@@ -172,7 +174,12 @@
   const copyBtn = document.getElementById('copyBtn');
 
   let currentFile = null;
-  let currentImage = null;   // HTMLImageElement
+  let currentImage = null;   // 原始 HTMLImageElement（EXIF 方向已由浏览器应用）
+  let rotation = 0;          // 用户手动旋转角度：0/90/180/270（顺时针）
+  // 离屏画布：始终存放「旋转后的原始图」，显示画布和上传数据都以它为准，
+  // 保证识别框坐标与所见图像一致
+  const rawCanvas = document.createElement('canvas');
+  const rawCtx = rawCanvas.getContext('2d');
   let results = [];          // [{text, score, box:[[x,y]*4]}]
   let activeIndex = -1;
   let selectedTier = null;
@@ -239,26 +246,61 @@
     const img = new Image();
     img.onload = () => {
       currentImage = img;
-      // 用原图像素作为 canvas 尺寸，保证后端返回的 box 坐标可直接映射
       URL.revokeObjectURL(url);
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      draw();
+      rotation = 0;
+      applyRotation();
       canvasWrap.style.display = 'block';
       dropzone.style.display = 'none';
       ocrBtn.disabled = false;
+      rotateLBtn.disabled = rotateRBtn.disabled = false;
       setStatus('');
     };
     img.onerror = () => setStatus('图片加载失败', true);
     img.src = url;
   }
 
+  // ---- 旋转 ----
+  // mica-ppocr 的 PP-OCRv6 流水线没有方向分类器（cls 模型），文字必须大致水平；
+  // 横拍/倒置图需先在前端转正，识别时上传的是旋转后的图，box 坐标与所见一致。
+  const rotateLBtn = document.getElementById('rotateLBtn');
+  const rotateRBtn = document.getElementById('rotateRBtn');
+  rotateLBtn.addEventListener('click', () => rotate(-90));
+  rotateRBtn.addEventListener('click', () => rotate(90));
+
+  function rotate(delta) {
+    if (!currentImage) return;
+    rotation = (rotation + delta + 360) % 360;
+    results = [];
+    activeIndex = -1;
+    renderResults();
+    applyRotation();
+    setStatus(rotation === 0 ? '' : `已旋转 ${rotation}°，识别时将使用旋转后的图片`);
+  }
+
+  /** 把 currentImage 按 rotation 画进离屏 rawCanvas，并同步显示画布尺寸。 */
+  function applyRotation() {
+    const w = currentImage.naturalWidth, h = currentImage.naturalHeight;
+    const swap = rotation === 90 || rotation === 270;
+    rawCanvas.width = swap ? h : w;
+    rawCanvas.height = swap ? w : h;
+    rawCtx.save();
+    rawCtx.translate(rawCanvas.width / 2, rawCanvas.height / 2);
+    rawCtx.rotate(rotation * Math.PI / 180);
+    rawCtx.drawImage(currentImage, -w / 2, -h / 2);
+    rawCtx.restore();
+    canvas.width = rawCanvas.width;
+    canvas.height = rawCanvas.height;
+    draw();
+  }
+
   resetBtn.addEventListener('click', () => {
     currentFile = null; currentImage = null; results = []; activeIndex = -1;
+    rotation = 0;
     fileInput.value = '';
     canvasWrap.style.display = 'none';
     dropzone.style.display = 'block';
     ocrBtn.disabled = true;
+    rotateLBtn.disabled = rotateRBtn.disabled = true;
     renderResults();
     setStatus('');
   });
@@ -270,7 +312,14 @@
     setStatus('<span class="spinner"></span>识别中…');
     try {
       const fd = new FormData();
-      fd.append('file', currentFile);
+      if (rotation === 0) {
+        fd.append('file', currentFile);
+      } else {
+        // 旋转后上传离屏画布导出的图；png 原图保持无损，其余转高质量 jpeg 控制体积
+        const type = currentFile.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        const blob = await new Promise(r => rawCanvas.toBlob(r, type, 0.95));
+        fd.append('file', blob, currentFile.name || 'rotated.jpg');
+      }
       if (selectedTier) fd.append('tier', selectedTier);
       // 返回值中的 count/costMs/results 用于页面摘要与可视化渲染
       const resp = await fetch('/api/ocr', { method: 'POST', body: fd });
@@ -294,7 +343,8 @@
   // ---- 绘制 ----
   function draw() {
     if (!currentImage) return;
-    ctx.drawImage(currentImage, 0, 0);
+    // 以离屏 rawCanvas（已应用旋转）为图源，保证 box 坐标与显示内容一致
+    ctx.drawImage(rawCanvas, 0, 0);
     // 未开启显示框时保留原图，减少不必要重绘开销
     if (!showBoxes.checked) return;
     const lw = Math.max(2, canvas.width / 500);

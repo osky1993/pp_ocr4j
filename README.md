@@ -57,6 +57,8 @@ mvn -DskipTests package && java -jar target/pp-ocr4j-0.0.1-SNAPSHOT.jar
 启动后访问 <http://localhost:8080/>（`src/main/resources/static/index.html`，单文件、零外部依赖）：
 
 - 拖拽 / 点击选择 / 直接粘贴截图上传图片；
+- **旋转转正**：左转/右转按钮以 90° 为步进旋转图片，识别时上传旋转后的图——
+  mica-ppocr 的流水线没有方向分类器（cls 模型），横拍/倒置的照片必须先转正，否则识别质量崩溃；
 - **模型档次切换**：工具栏可选 tiny / small / medium（从 `GET /api/ocr/tiers` 加载，
   模型文件缺失的档次自动禁用；某档首次识别时后端懒加载引擎，稍慢，之后走缓存）；
 - 调用 `POST /api/ocr` 识别，画布上叠加文字框（绿色 = 置信度 ≥ 0.9，橙色 = 较低）；
