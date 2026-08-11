@@ -176,7 +176,8 @@
   let results = [];          // [{text, score, box:[[x,y]*4]}]
   let activeIndex = -1;
   let selectedTier = null;
-  let loadedTiers = new Set();   // 已在服务端加载过的档次（首次调用需加载模型）
+  // 缓存本地已完成过识别的档次，避免重复提示“首次加载耗时”
+  let loadedTiers = new Set();
 
   // ---- 模型档次选择器 ----
   const TIER_DESC = {
@@ -189,6 +190,7 @@
 
   async function initTiers() {
     try {
+      // 先拉取后端档次能力：available 决定是否可点击，isDefault 决定初始选中
       const data = await (await fetch('/api/ocr/tiers')).json();
       selectedTier = data.defaultTier;
       data.tiers.forEach(t => t.loaded && loadedTiers.add(t.tier));
@@ -232,10 +234,12 @@
     currentFile = file;
     results = [];
     renderResults();
+    // 用本地临时 URL 预览图片，避免上传后才更新画布
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       currentImage = img;
+      // 用原图像素作为 canvas 尺寸，保证后端返回的 box 坐标可直接映射
       URL.revokeObjectURL(url);
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
@@ -268,6 +272,7 @@
       const fd = new FormData();
       fd.append('file', currentFile);
       if (selectedTier) fd.append('tier', selectedTier);
+      // 返回值中的 count/costMs/results 用于页面摘要与可视化渲染
       const resp = await fetch('/api/ocr', { method: 'POST', body: fd });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
@@ -290,6 +295,7 @@
   function draw() {
     if (!currentImage) return;
     ctx.drawImage(currentImage, 0, 0);
+    // 未开启显示框时保留原图，减少不必要重绘开销
     if (!showBoxes.checked) return;
     const lw = Math.max(2, canvas.width / 500);
     results.forEach((r, i) => {
@@ -315,6 +321,7 @@
   // 点击画布定位到对应结果
   canvas.addEventListener('click', e => {
     if (!results.length) return;
+    // 鼠标点击先转到 canvas 像素坐标，再做 pointInBox 命中测试
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * canvas.width / rect.width;
     const y = (e.clientY - rect.top) * canvas.height / rect.height;
@@ -327,6 +334,7 @@
 
   function pointInBox(x, y, box) {
     let inside = false;
+    // 使用标准射线法判断点是否在四边形内
     for (let i = 0, j = 3; i < 4; j = i++) {
       const [xi, yi] = box[i], [xj, yj] = box[j];
       if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
@@ -342,6 +350,7 @@
       copyBtn.style.display = 'none';
       return;
     }
+    // 结果按识别顺序渲染，list hover 与 canvas 的文字框高亮联动
     resultList.innerHTML = results.map((r, i) => `
       <div class="item" data-i="${i}">
         <span class="txt">${escapeHtml(r.text)}</span>
@@ -363,16 +372,19 @@
 
   copyBtn.addEventListener('click', async () => {
     const text = results.map(r => r.text).join('\n');
+    // 保持识别顺序拼接后复制，方便外部直接粘贴为逐行文本
     await navigator.clipboard.writeText(text);
     copyBtn.textContent = '已复制 ✓';
     setTimeout(() => copyBtn.textContent = '复制全部文本', 1500);
   });
 
   function setStatus(html, isError) {
+    // 通过 innerHTML 注入 spinner，isError 为 true 时用红色样式提示
     statusEl.innerHTML = html;
     statusEl.classList.toggle('error', !!isError);
   }
   function escapeHtml(s) {
+    // 防止 OCR 输出中的特殊字符注入页面
     return String(s).replace(/[&<>"']/g, c =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }

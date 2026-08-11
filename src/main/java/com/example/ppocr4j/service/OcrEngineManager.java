@@ -25,21 +25,29 @@ public class OcrEngineManager implements DisposableBean {
 
     private static final Logger log = LoggerFactory.getLogger(OcrEngineManager.class);
 
+    /** 支持的模型档次，按轻量到高精度顺序排序。 */
     public static final List<String> TIERS = List.of("tiny", "small", "medium");
+
+    /** 模型根目录，子目录应分别包含 det.onnx / rec.onnx / dict.txt。 */
     private static final Path MODEL_ROOT = Path.of("models", "ppocr-v6");
 
+    /** 缓存已经创建的引擎实例。key 为模型档次。 */
     private final Map<String, PPOcrV6Engine> engines = new ConcurrentHashMap<>();
+
+    /** 从 starter 注入的默认配置快照，用于构造其他档次引擎的基底参数。 */
     private final PPOcrV6Config baseConfig;
+
+    /** 当请求未传 tier 或传入空值时的默认 fallback 档。 */
     private final String defaultTier;
 
     public OcrEngineManager(PPOcrV6Engine defaultEngine, PPOcrV6Config config) {
         this.baseConfig = config;
+        // 通过默认 det 模型路径判断当前 YAML 中配置的是哪个档次（tiny/small/medium 之一）。
         this.defaultTier = TIERS.stream()
                 .filter(t -> config.getDetModelPath().contains("/" + t + "/"))
                 .findFirst()
                 .orElse("tiny");
-        // Starter 引擎的生命周期由 Spring 管理（destroy 时自动 close），
-        // destroy() 里跳过它，只关闭本类懒加载创建的引擎
+        // Starter 提供的引擎由 Spring 生命周期管理，先注册进去避免重复创建默认档实例。
         engines.put(defaultTier, defaultEngine);
     }
 
@@ -47,7 +55,14 @@ public class OcrEngineManager implements DisposableBean {
         return defaultTier;
     }
 
-    /** 某档模型文件是否已就位（det.onnx + rec.onnx + dict.txt 齐全）。 */
+    /**
+     * 判定某一档模型文件是否齐全。
+     *
+     * <p>完整性条件是：det.onnx、rec.onnx、dict.txt 都为普通文件。</p>
+     *
+     * @param tier 模型档次
+     * @return 完整时返回 true
+     */
     public boolean isAvailable(String tier) {
         Path dir = MODEL_ROOT.resolve(tier);
         return Files.isRegularFile(dir.resolve("det.onnx"))
@@ -55,19 +70,38 @@ public class OcrEngineManager implements DisposableBean {
                 && Files.isRegularFile(dir.resolve("dict.txt"));
     }
 
-    /** 各档次可用状态，供前端渲染选择器。 */
+    /**
+     * 返回三档的运行时状态，用于前端渲染选择器。
+     *
+     * <p>返回字段说明：
+     * <ul>
+     *   <li>tier：档次名</li>
+     *   <li>available：是否具备完整模型文件</li>
+     *   <li>loaded：实例是否已被加载并缓存</li>
+     *   <li>isDefault：是否为默认 fallback 档次</li>
+     * </ul></p>
+     */
     public List<Map<String, Object>> listTiers() {
         return TIERS.stream()
                 .<Map<String, Object>>map(t -> Map.of(
                         "tier", t,
-                        "available", isAvailable(t),
-                        "loaded", engines.containsKey(t),
+                        "available", isAvailable(t), // 前端依赖该值禁用未下载档次
+                        "loaded", engines.containsKey(t), // 请求一次后会转为 true
                         "isDefault", t.equals(defaultTier)))
                 .toList();
     }
 
     /**
-     * 获取指定档次的引擎，未加载则创建（首次调用有模型加载耗时）。
+     * 获取指定档次的引擎实例。
+     *
+     * <p>行为说明：
+     * <ul>
+     *   <li>tier 为空时回退到 defaultTier。</li>
+     *   <li>非法 tier 立即抛出 {@link IllegalArgumentException}。</li>
+     *   <li>如果模型文件缺失，明确提示下载路径。</li>
+     *   <li>首次调用的档次将会懒加载并写入缓存，后续复用。</li>
+     *   <li>新建引擎只替换 det/rec/dict 模型路径，其余参数继承 baseConfig。</li>
+     * </ul></p>
      *
      * @param tier tiny / small / medium，null 或空串回落到默认档
      * @throws IllegalArgumentException 档次非法或模型文件缺失
@@ -109,9 +143,11 @@ public class OcrEngineManager implements DisposableBean {
         engines.forEach((tier, engine) -> {
             if (!tier.equals(defaultTier)) {
                 log.info("关闭 {} 档引擎", tier);
+                // 仅关闭本类创建的懒加载实例，starter 注入实例由 Spring 管理生命周期。
                 engine.close();
             }
         });
+        // 清空缓存，避免重复 close / 挂起引用。
         engines.clear();
     }
 }
