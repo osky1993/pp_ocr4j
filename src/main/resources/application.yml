@@ -1,0 +1,30 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: pp-ocr4j
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+
+# 模型档次（tiny/small/medium）由前端页面 / 接口 tier 参数动态切换，
+# 引擎由 OcrEngineManager 按档懒加载。本配置的作用：
+#   1. 三个 *-path 决定「默认档」（不传 tier 时使用，且随应用启动预加载）；
+#   2. 调参项是所有档共享的基底配置（懒加载引擎会继承，仅替换模型路径）。
+mica:
+  ai:
+    ppocr:
+      enabled: true                                    # 注意：OcrEngineManager 依赖 Starter 装配的 Bean，不可关闭
+      det-model-path: models/ppocr-v6/tiny/det.onnx    # 默认档：文字检测模型
+      rec-model-path: models/ppocr-v6/tiny/rec.onnx    # 默认档：文字识别模型
+      rec-char-dict-path: models/ppocr-v6/tiny/dict.txt
+      # 可选调参项，对三档统一生效（默认 CPU 单线程，保证与 Python 参考实现 bit-exact）：
+      # det-thresh: 0.3
+      # det-box-thresh: 0.6
+      # det-unclip-ratio: 1.5
+      # rec-batch-size: 6
+      # intra-op-num-threads: 1
+      # inter-op-num-threads: 1
+      # prefer-accelerator: false

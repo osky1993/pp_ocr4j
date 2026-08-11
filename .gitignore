@@ -1,0 +1,10 @@
+target/
+*.log
+
+# 大体积模型不入库（tiny 档随仓库提交，small/medium 下载命令见 README）
+models/ppocr-v6/small/
+models/ppocr-v6/medium/
+.idea/
+*.iml
+.vscode/
+.DS_Store

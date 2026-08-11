@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pp-ocr4j · PP-OCRv6 在线识别</title>
+<style>
+  :root {
+    --bg: #f4f6fa;
+    --card: #ffffff;
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #10b981;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 28px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  header h1 { font-size: 20px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main {
+    max-width: 1200px;
+    margin: 24px auto;
+    padding: 0 20px;
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+  }
+  /* 上传区 */
+  #dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 36px 20px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #dropzone.dragover { border-color: var(--primary); background: #eff6ff; }
+  #dropzone strong { color: var(--primary); }
+  #dropzone .hint { font-size: 12px; margin-top: 8px; }
+  /* 画布 */
+  #canvasWrap { display: none; margin-top: 14px; position: relative; }
+  #canvas { width: 100%; border-radius: 8px; border: 1px solid var(--border); display: block; }
+  .toolbar {
+    display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap;
+  }
+  button {
+    border: none; border-radius: 8px; padding: 9px 18px;
+    font-size: 14px; cursor: pointer; transition: background .15s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); }
+  .toolbar label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  /* 模型档次选择器 */
+  .tier-group { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .tier-group button {
+    border-radius: 0; padding: 8px 14px; font-size: 13px;
+    background: transparent; color: var(--muted); border-right: 1px solid var(--border);
+  }
+  .tier-group button:last-child { border-right: none; }
+  .tier-group button.selected { background: var(--primary); color: #fff; }
+  .tier-group button:disabled { color: #d1d5db; cursor: not-allowed; }
+  .tier-desc { font-size: 12px; color: var(--muted); }
+  /* 状态条 */
+  #status { font-size: 13px; color: var(--muted); }
+  #status.error { color: #dc2626; }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid var(--border); border-top-color: var(--primary);
+    border-radius: 50%; animation: spin .7s linear infinite;
+    vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* 结果面板 */
+  #resultPanel h2 { font-size: 15px; margin-bottom: 4px; }
+  #summary { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  #summary .badge {
+    display: inline-block; background: #ecfdf5; color: var(--accent);
+    border-radius: 20px; padding: 2px 10px; margin-right: 6px; font-weight: 600;
+  }
+  #resultList { max-height: 560px; overflow-y: auto; }
+  .item {
+    padding: 8px 10px; border-radius: 8px; cursor: pointer;
+    display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+    transition: background .1s;
+  }
+  .item:hover, .item.active { background: #eff6ff; }
+  .item .txt { font-size: 14px; word-break: break-all; }
+  .item .score { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .item .score.low { color: #d97706; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 30px 0; }
+  #copyBtn { margin-top: 10px; width: 100%; }
+</style>
+</head>
+<body>
+<header>
+  <h1>pp-ocr4j</h1>
+  <span class="sub">PP-OCRv6 · mica-ppocr · 本地推理，图片不出内网</span>
+</header>
+
+<main>
+  <!-- 左侧：上传 + 可视化 -->
+  <section class="card">
+    <div id="dropzone">
+      <div>拖拽图片到这里，或 <strong>点击选择文件</strong></div>
+      <div class="hint">支持 png / jpg / bmp / webp，最大 20MB</div>
+      <input type="file" id="fileInput" accept="image/*" hidden>
+    </div>
+
+    <div id="canvasWrap">
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="toolbar">
+      <button id="ocrBtn" class="btn-primary" disabled>开始识别</button>
+      <button id="resetBtn" class="btn-ghost">重新选择</button>
+      <div class="tier-group" id="tierGroup" title="模型档次"></div>
+      <span class="tier-desc" id="tierDesc"></span>
+      <label><input type="checkbox" id="showBoxes" checked> 显示文字框</label>
+      <span id="status"></span>
+    </div>
+  </section>
+
+  <!-- 右侧：识别结果 -->
+  <section class="card" id="resultPanel">
+    <h2>识别结果</h2>
+    <div id="summary"></div>
+    <div id="resultList"><div class="empty">上传图片并点击「开始识别」</div></div>
+    <button id="copyBtn" class="btn-ghost" style="display:none">复制全部文本</button>
+  </section>
+</main>
+
+<script>
+(() => {
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const canvasWrap = document.getElementById('canvasWrap');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const ocrBtn = document.getElementById('ocrBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const showBoxes = document.getElementById('showBoxes');
+  const statusEl = document.getElementById('status');
+  const summaryEl = document.getElementById('summary');
+  const resultList = document.getElementById('resultList');
+  const copyBtn = document.getElementById('copyBtn');
+
+  let currentFile = null;
+  let currentImage = null;   // HTMLImageElement
+  let results = [];          // [{text, score, box:[[x,y]*4]}]
+  let activeIndex = -1;
+  let selectedTier = null;
+  let loadedTiers = new Set();   // 已在服务端加载过的档次（首次调用需加载模型）
+
+  // ---- 模型档次选择器 ----
+  const TIER_DESC = {
+    tiny:   '轻量优先，速度快',
+    small:  '速度与精度均衡',
+    medium: '精度优先，覆盖生僻字'
+  };
+  const tierGroup = document.getElementById('tierGroup');
+  const tierDesc = document.getElementById('tierDesc');
+
+  async function initTiers() {
+    try {
+      const data = await (await fetch('/api/ocr/tiers')).json();
+      selectedTier = data.defaultTier;
+      data.tiers.forEach(t => t.loaded && loadedTiers.add(t.tier));
+      tierGroup.innerHTML = data.tiers.map(t => `
+        <button data-tier="${t.tier}" ${t.available ? '' : 'disabled title="模型未下载，见 README"'}
+                class="${t.tier === selectedTier ? 'selected' : ''}">${t.tier}</button>`).join('');
+      tierGroup.querySelectorAll('button').forEach(btn =>
+        btn.addEventListener('click', () => {
+          selectedTier = btn.dataset.tier;
+          tierGroup.querySelectorAll('button').forEach(b =>
+            b.classList.toggle('selected', b === btn));
+          updateTierDesc();
+        }));
+      updateTierDesc();
+    } catch (e) {
+      tierDesc.textContent = '档次列表加载失败';
+    }
+  }
+  function updateTierDesc() {
+    const hint = loadedTiers.has(selectedTier) ? '' : '（首次使用需加载模型，稍慢）';
+    tierDesc.textContent = (TIER_DESC[selectedTier] || '') + hint;
+  }
+  initTiers();
+
+  // ---- 文件选择 ----
+  dropzone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => fileInput.files[0] && loadFile(fileInput.files[0]));
+  ['dragover', 'dragleave', 'drop'].forEach(ev =>
+    dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.toggle('dragover', ev === 'dragover'); }));
+  dropzone.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f && f.type.startsWith('image/')) loadFile(f);
+  });
+  // 支持直接粘贴截图
+  document.addEventListener('paste', e => {
+    const item = [...e.clipboardData.items].find(i => i.type.startsWith('image/'));
+    if (item) loadFile(item.getAsFile());
+  });
+
+  function loadFile(file) {
+    currentFile = file;
+    results = [];
+    renderResults();
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      currentImage = img;
+      URL.revokeObjectURL(url);
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      draw();
+      canvasWrap.style.display = 'block';
+      dropzone.style.display = 'none';
+      ocrBtn.disabled = false;
+      setStatus('');
+    };
+    img.onerror = () => setStatus('图片加载失败', true);
+    img.src = url;
+  }
+
+  resetBtn.addEventListener('click', () => {
+    currentFile = null; currentImage = null; results = []; activeIndex = -1;
+    fileInput.value = '';
+    canvasWrap.style.display = 'none';
+    dropzone.style.display = 'block';
+    ocrBtn.disabled = true;
+    renderResults();
+    setStatus('');
+  });
+
+  // ---- OCR 请求 ----
+  ocrBtn.addEventListener('click', async () => {
+    if (!currentFile) return;
+    ocrBtn.disabled = true;
+    setStatus('<span class="spinner"></span>识别中…');
+    try {
+      const fd = new FormData();
+      fd.append('file', currentFile);
+      if (selectedTier) fd.append('tier', selectedTier);
+      const resp = await fetch('/api/ocr', { method: 'POST', body: fd });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      results = data.results;
+      activeIndex = -1;
+      loadedTiers.add(data.tier);
+      updateTierDesc();
+      setStatus(`完成：${data.count} 个文本区域，耗时 ${data.costMs} ms（${data.tier}）`);
+      summaryEl.innerHTML = `<span class="badge">${escapeHtml(data.tier)}</span><span class="badge">${data.count} 条</span><span class="badge">${data.costMs} ms</span>${escapeHtml(data.source || '')}`;
+      renderResults();
+      draw();
+    } catch (err) {
+      setStatus('识别失败：' + err.message, true);
+    } finally {
+      ocrBtn.disabled = false;
+    }
+  });
+
+  // ---- 绘制 ----
+  function draw() {
+    if (!currentImage) return;
+    ctx.drawImage(currentImage, 0, 0);
+    if (!showBoxes.checked) return;
+    const lw = Math.max(2, canvas.width / 500);
+    results.forEach((r, i) => {
+      const box = r.box;
+      ctx.beginPath();
+      ctx.moveTo(box[0][0], box[0][1]);
+      for (let k = 1; k < 4; k++) ctx.lineTo(box[k][0], box[k][1]);
+      ctx.closePath();
+      if (i === activeIndex) {
+        ctx.fillStyle = 'rgba(37,99,235,.25)';
+        ctx.fill();
+        ctx.strokeStyle = '#1d4ed8';
+        ctx.lineWidth = lw * 1.6;
+      } else {
+        ctx.strokeStyle = r.score >= 0.9 ? '#10b981' : '#f59e0b';
+        ctx.lineWidth = lw;
+      }
+      ctx.stroke();
+    });
+  }
+  showBoxes.addEventListener('change', draw);
+
+  // 点击画布定位到对应结果
+  canvas.addEventListener('click', e => {
+    if (!results.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * canvas.width / rect.width;
+    const y = (e.clientY - rect.top) * canvas.height / rect.height;
+    const idx = results.findIndex(r => pointInBox(x, y, r.box));
+    if (idx >= 0) {
+      setActive(idx);
+      document.querySelector(`.item[data-i="${idx}"]`)?.scrollIntoView({ block: 'nearest' });
+    }
+  });
+
+  function pointInBox(x, y, box) {
+    let inside = false;
+    for (let i = 0, j = 3; i < 4; j = i++) {
+      const [xi, yi] = box[i], [xj, yj] = box[j];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  // ---- 结果列表 ----
+  function renderResults() {
+    if (!results.length) {
+      resultList.innerHTML = '<div class="empty">上传图片并点击「开始识别」</div>';
+      summaryEl.innerHTML = '';
+      copyBtn.style.display = 'none';
+      return;
+    }
+    resultList.innerHTML = results.map((r, i) => `
+      <div class="item" data-i="${i}">
+        <span class="txt">${escapeHtml(r.text)}</span>
+        <span class="score ${r.score < 0.9 ? 'low' : ''}">${r.score.toFixed(3)}</span>
+      </div>`).join('');
+    copyBtn.style.display = 'block';
+    resultList.querySelectorAll('.item').forEach(el => {
+      el.addEventListener('mouseenter', () => setActive(+el.dataset.i));
+      el.addEventListener('mouseleave', () => setActive(-1));
+    });
+  }
+
+  function setActive(i) {
+    activeIndex = i;
+    resultList.querySelectorAll('.item').forEach(el =>
+      el.classList.toggle('active', +el.dataset.i === i));
+    draw();
+  }
+
+  copyBtn.addEventListener('click', async () => {
+    const text = results.map(r => r.text).join('\n');
+    await navigator.clipboard.writeText(text);
+    copyBtn.textContent = '已复制 ✓';
+    setTimeout(() => copyBtn.textContent = '复制全部文本', 1500);
+  });
+
+  function setStatus(html, isError) {
+    statusEl.innerHTML = html;
+    statusEl.classList.toggle('error', !!isError);
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+})();
+</script>
+</body>
+</html>
