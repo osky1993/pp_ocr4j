@@ -5,6 +5,7 @@ import com.example.ppocr4j.exception.OcrException;
 import com.example.ppocr4j.web.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
 
@@ -56,13 +57,7 @@ public class OcrExecutor implements DisposableBean {
             throw new OcrException(ErrorCode.RATE_LIMITED,
                     "识别并发已达上限(" + concurrency + ")，请稍后重试");
         }
-        Future<T> future = pool.submit(() -> {
-            try {
-                return task.call();
-            } finally {
-                permits.release();
-            }
-        });
+        Future<T> future = pool.submit(withMdc(task));
         try {
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
@@ -88,13 +83,23 @@ public class OcrExecutor implements DisposableBean {
             throw new OcrException(ErrorCode.RATE_LIMITED,
                     "识别并发已达上限(" + concurrency + ")，请稍后重试");
         }
-        return pool.submit(() -> {
+        return pool.submit(withMdc(task));
+    }
+
+    /** 把提交线程的 MDC（traceId 等）透传到工作线程，日志保持可追踪；并保证许可释放。 */
+    private <T> Callable<T> withMdc(Callable<T> task) {
+        var context = MDC.getCopyOfContextMap();
+        return () -> {
+            if (context != null) {
+                MDC.setContextMap(context);
+            }
             try {
                 return task.call();
             } finally {
+                MDC.clear();
                 permits.release();
             }
-        });
+        };
     }
 
     public int availablePermits() {

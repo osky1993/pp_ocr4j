@@ -6,6 +6,7 @@ import com.example.ppocr4j.service.OcrService;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Result;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -51,22 +52,60 @@ public class OcrController {
      *   <li>按实际生效的 tier 组装统一响应</li>
      * </ul></p>
      *
-     * <p>示例：<code>curl -F "file=@test_images/1.png" -F "tier=small" http://localhost:8080/api/ocr</code></p>
+     * <p>示例：<code>curl -F "file=@test_images/1.png" -F "tier=small" -F "rotate=90" http://localhost:8080/api/ocr</code></p>
      *
-     * @param file 上传文件，支持 multipart/form-data
-     * @param tier 模型档次（tiny/small/medium，可选；为空按默认）
+     * @param file       上传文件，支持 multipart/form-data
+     * @param tier       模型档次（tiny/small/medium，可选；为空按默认）
+     * @param rotate     识别前顺时针旋转角度（0/90/180/270，默认 0）
+     * @param autoRotate true 时四方向自动试探选优（约 4 倍 tiny 耗时），忽略 rotate
      */
     @PostMapping("/api/ocr")
     public ApiResult<OcrResponse> ocr(@RequestParam("file") MultipartFile file,
-                                      @RequestParam(value = "tier", required = false) String tier) throws IOException {
+                                      @RequestParam(value = "tier", required = false) String tier,
+                                      @RequestParam(value = "rotate", defaultValue = "0") int rotate,
+                                      @RequestParam(value = "autoRotate", defaultValue = "false") boolean autoRotate)
+            throws IOException {
         if (file.isEmpty()) {
             throw new OcrException(ErrorCode.INVALID_PARAM, "上传文件为空");
         }
         long start = System.currentTimeMillis();
-        List<PPOcrV6Result> results = ocrService.recognize(file.getBytes(), tier);
+        List<PPOcrV6Result> results = ocrService.recognize(file.getBytes(), tier, rotate, autoRotate);
         return ApiResult.ok(OcrResponse.of(file.getOriginalFilename(), resolvedTier(tier), results,
                 System.currentTimeMillis() - start));
     }
+
+    /**
+     * base64 识别接口：便于从 MQ/内部 RPC 携带图片字节的调用方（无需构造 multipart）。
+     *
+     * <p>请求体：{@code {"image": "<base64>", "tier": "small", "rotate": 0, "autoRotate": false}}，
+     * image 支持裸 base64 或 data URL（data:image/png;base64,...）。</p>
+     */
+    @PostMapping("/api/ocr/base64")
+    public ApiResult<OcrResponse> ocrBase64(@RequestBody Base64Request req) {
+        if (req.image() == null || req.image().isBlank()) {
+            throw new OcrException(ErrorCode.INVALID_PARAM, "image 字段为空");
+        }
+        String payload = req.image();
+        int comma = payload.indexOf(',');
+        if (payload.startsWith("data:") && comma > 0) {
+            payload = payload.substring(comma + 1);
+        }
+        byte[] bytes;
+        try {
+            bytes = java.util.Base64.getDecoder().decode(payload);
+        } catch (IllegalArgumentException e) {
+            throw new OcrException(ErrorCode.INVALID_PARAM, "image 不是合法的 base64 字符串");
+        }
+        long start = System.currentTimeMillis();
+        List<PPOcrV6Result> results = ocrService.recognize(bytes, req.tier(),
+                req.rotate() == null ? 0 : req.rotate(),
+                Boolean.TRUE.equals(req.autoRotate()));
+        return ApiResult.ok(OcrResponse.of("base64", resolvedTier(req.tier()), results,
+                System.currentTimeMillis() - start));
+    }
+
+    /** base64 接口请求体。 */
+    public record Base64Request(String image, String tier, Integer rotate, Boolean autoRotate) {}
 
     /**
      * 演示接口：识别仓库自带的行驶证测试图 test_images/1.png。

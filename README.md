@@ -79,10 +79,20 @@ curl http://localhost:8080/api/ocr/demo
 curl -F "file=@test_images/1.png" http://localhost:8080/api/ocr
 ```
 
-可选 `tier` 参数指定模型档次（缺省用 `application.yml` 配置的默认档）：
+可选参数：`tier`（模型档次，缺省用默认档）、`rotate`（识别前顺时针旋转 0/90/180/270，
+横拍图转正用）、`autoRotate`（true 时四方向自动试探选优，约 4 倍 tiny 耗时，忽略 rotate）：
 
 ```bash
-curl -F "file=@test_images/1.png" -F "tier=medium" http://localhost:8080/api/ocr
+curl -F "file=@test_images/1.png" -F "tier=medium" -F "rotate=90" http://localhost:8080/api/ocr
+```
+
+### 2b. base64 识别（JSON 输入）
+
+适合从 MQ / 内部 RPC 携带图片字节的调用方，参数与 multipart 接口一致，
+`image` 支持裸 base64 或 data URL：
+
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{"image":"<base64>","tier":"small","rotate":0,"autoRotate":false}' http://localhost:8080/api/ocr/base64
 ```
 
 ### 3. 模型档次列表
