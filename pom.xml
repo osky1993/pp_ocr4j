@@ -34,6 +34,15 @@
             <artifactId>mica-ppocr-spring-boot-starter</artifactId>
             <version>${mica.ppocr.version}</version>
         </dependency>
+        <!-- 可观测性：健康/就绪探针 + Prometheus 指标 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
@@ -41,6 +50,19 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <!-- 生成 build-info.properties，供 /api/ocr/info 返回组件版本 -->
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                        <configuration>
+                            <additionalProperties>
+                                <mica-ppocr>${mica.ppocr.version}</mica-ppocr>
+                            </additionalProperties>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

@@ -9,10 +9,28 @@ logging:
 spring:
   application:
     name: pp-ocr4j
+  profiles:
+    # 本地运行默认 dev（开放 /api/ocr/demo 演示接口）；生产部署显式指定 profile 即自动关闭
+    default: dev
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true         # 开启 /actuator/health/liveness 与 /readiness
+      show-details: always
+  health:
+    group:
+      readiness:
+        include: readinessState,ocrReadiness   # 就绪 = 应用就绪 + 默认档模型在位
 
 # 组件级配置：资源保护 / 部署 / 安全（引擎调参见下方 mica.ai.ppocr.*）
 ocr:

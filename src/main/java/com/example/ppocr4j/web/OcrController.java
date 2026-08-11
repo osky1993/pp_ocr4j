@@ -4,6 +4,8 @@ import com.example.ppocr4j.exception.OcrException;
 import com.example.ppocr4j.service.OcrEngineManager;
 import com.example.ppocr4j.service.OcrService;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Result;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,10 +22,13 @@ public class OcrController {
 
     private final OcrService ocrService;
     private final OcrEngineManager engineManager;
+    private final ObjectProvider<BuildProperties> buildProperties;
 
-    public OcrController(OcrService ocrService, OcrEngineManager engineManager) {
+    public OcrController(OcrService ocrService, OcrEngineManager engineManager,
+                         ObjectProvider<BuildProperties> buildProperties) {
         this.ocrService = ocrService;
         this.engineManager = engineManager;
+        this.buildProperties = buildProperties;
     }
 
     /**
@@ -108,18 +113,18 @@ public class OcrController {
     public record Base64Request(String image, String tier, Integer rotate, Boolean autoRotate) {}
 
     /**
-     * 演示接口：识别仓库自带的行驶证测试图 test_images/1.png。
-     *
-     * <p>用于快速验证服务可用性，不依赖上传流程，但仍走同样 OCR 引擎路径。</p>
-     *
-     * @param tier 选择档次（可选）
+     * 组件信息接口：版本、构建时间、依赖库版本、各档模型状态。灰度确认与排障入口。
      */
-    @GetMapping("/api/ocr/demo")
-    public ApiResult<OcrResponse> demo(@RequestParam(value = "tier", required = false) String tier) {
-        long start = System.currentTimeMillis();
-        List<PPOcrV6Result> results = ocrService.recognizeFile("test_images/1.png", tier);
-        return ApiResult.ok(OcrResponse.of("test_images/1.png", resolvedTier(tier), results,
-                System.currentTimeMillis() - start));
+    @GetMapping("/api/ocr/info")
+    public ApiResult<Map<String, Object>> info() {
+        BuildProperties build = buildProperties.getIfAvailable();
+        return ApiResult.ok(Map.of(
+                "name", build != null ? build.getName() : "pp-ocr4j",
+                "version", build != null ? build.getVersion() : "unknown",
+                "buildTime", build != null && build.getTime() != null ? build.getTime().toString() : "unknown",
+                "micaPpocrVersion", build != null ? String.valueOf(build.get("mica-ppocr")) : "unknown",
+                "defaultTier", engineManager.getDefaultTier(),
+                "tiers", engineManager.listTiers()));
     }
 
     /**

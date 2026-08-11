@@ -39,11 +39,45 @@ public class OcrService {
     private final OcrEngineManager engineManager;
     private final OcrExecutor executor;
     private final OcrProperties props;
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
-    public OcrService(OcrEngineManager engineManager, OcrExecutor executor, OcrProperties props) {
+    public OcrService(OcrEngineManager engineManager, OcrExecutor executor, OcrProperties props,
+                      io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.engineManager = engineManager;
         this.executor = executor;
         this.props = props;
+        this.meterRegistry = meterRegistry;
+    }
+
+    /**
+     * 指标包装：ocr.recognize 计时器（tier/outcome 标签）+ ocr.rejected 拒绝计数器。
+     * outcome: success / rejected(2001) / timeout(2002) / error（其余异常）。
+     */
+    private List<PPOcrV6Result> metered(String tier, java.util.function.Supplier<List<PPOcrV6Result>> action) {
+        // tier 标签必须收敛到有限集合，防止非法输入造成 Prometheus 标签基数爆炸
+        String normalized = (tier == null || tier.isBlank()) ? engineManager.getDefaultTier() : tier.toLowerCase();
+        String tierTag = OcrEngineManager.TIERS.contains(normalized) ? normalized : "invalid";
+        long start = System.nanoTime();
+        String outcome = "success";
+        try {
+            return action.get();
+        } catch (OcrException e) {
+            outcome = switch (e.getErrorCode()) {
+                case RATE_LIMITED -> "rejected";
+                case TIMEOUT -> "timeout";
+                default -> "error";
+            };
+            if (!"error".equals(outcome)) {
+                meterRegistry.counter("ocr.rejected", "reason", outcome).increment();
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            outcome = "error";
+            throw e;
+        } finally {
+            meterRegistry.timer("ocr.recognize", "tier", tierTag, "outcome", outcome)
+                    .record(java.time.Duration.ofNanos(System.nanoTime() - start));
+        }
     }
 
     /**
@@ -57,7 +91,7 @@ public class OcrService {
      */
     public List<PPOcrV6Result> recognize(byte[] imageBytes, String tier, int rotate, boolean autoRotate) {
         validateRotate(rotate);
-        return executor.execute(() -> {
+        return metered(tier, () -> executor.execute(() -> {
             Mat image = decodeBytes(imageBytes);
             try {
                 checkPixels(image);
@@ -65,14 +99,14 @@ public class OcrService {
             } finally {
                 image.release();
             }
-        });
+        }));
     }
 
     /**
      * 识别本地磁盘上的图片文件（demo/调试用途，不支持旋转参数）。
      */
     public List<PPOcrV6Result> recognizeFile(String path, String tier) {
-        return executor.execute(() -> {
+        return metered(tier, () -> executor.execute(() -> {
             Mat image = Imgcodecs.imread(path);
             if (image.empty()) {
                 throw new OcrException(ErrorCode.INVALID_PARAM, "图片不存在或无法读取: " + path);
@@ -83,7 +117,7 @@ public class OcrService {
             } finally {
                 image.release();
             }
-        });
+        }));
     }
 
     /** 在工作线程内：先按 rotate/autoRotate 转正，再识别。 */
