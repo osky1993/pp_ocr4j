@@ -2,6 +2,7 @@ package com.example.ppocr4j;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * 应用入口：启动 pp-ocr4j Spring Boot 服务。
@@ -10,6 +11,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 启动参数或环境变量可直接影响运行时模型档次与运行参数。</p>
  */
 @SpringBootApplication
+@ConfigurationPropertiesScan
 public class PpOcr4jApplication {
 
     /**

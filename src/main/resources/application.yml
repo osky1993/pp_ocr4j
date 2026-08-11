@@ -14,6 +14,15 @@ spring:
       max-file-size: 20MB
       max-request-size: 20MB
 
+# 组件级配置：资源保护 / 部署 / 安全（引擎调参见下方 mica.ai.ppocr.*）
+ocr:
+  model-root: models/ppocr-v6   # 模型根目录（部署时可挂载到任意路径）
+  max-pixels: 40000000          # 解码后像素上限（≈6300×6300），防解码炸弹
+  concurrency: 0                # 识别并发上限，0 = CPU 核数；超限立即返回 2001
+  timeout-ms: 30000             # 单次识别超时，超时返回 2002
+  warmup-tiers: [tiny]          # 启动预热档次（校验模型文件并各跑一次小图）
+  api-keys: []                  # 空 = 鉴权关闭；非空则校验 /api/** 的 X-API-Key 头
+
 # 模型档次（tiny/small/medium）由前端页面 / 接口 tier 参数动态切换，
 # 引擎由 OcrEngineManager 按档懒加载。本配置的作用：
 #   1. 三个 *-path 决定「默认档」（不传 tier 时使用，且随应用启动预加载）；

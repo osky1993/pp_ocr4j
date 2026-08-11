@@ -30,8 +30,8 @@ public class OcrEngineManager implements DisposableBean {
     /** 支持的模型档次，按轻量到高精度顺序排序。 */
     public static final List<String> TIERS = List.of("tiny", "small", "medium");
 
-    /** 模型根目录，子目录应分别包含 det.onnx / rec.onnx / dict.txt。 */
-    private static final Path MODEL_ROOT = Path.of("models", "ppocr-v6");
+    /** 模型根目录（来自 ocr.model-root 配置），子目录应分别包含 det.onnx / rec.onnx / dict.txt。 */
+    private final Path modelRoot;
 
     /** 缓存已经创建的引擎实例。key 为模型档次。 */
     private final Map<String, PPOcrV6Engine> engines = new ConcurrentHashMap<>();
@@ -42,8 +42,10 @@ public class OcrEngineManager implements DisposableBean {
     /** 当请求未传 tier 或传入空值时的默认 fallback 档。 */
     private final String defaultTier;
 
-    public OcrEngineManager(PPOcrV6Engine defaultEngine, PPOcrV6Config config) {
+    public OcrEngineManager(PPOcrV6Engine defaultEngine, PPOcrV6Config config,
+                            com.example.ppocr4j.config.OcrProperties props) {
         this.baseConfig = config;
+        this.modelRoot = Path.of(props.getModelRoot());
         // 通过默认 det 模型路径判断当前 YAML 中配置的是哪个档次（tiny/small/medium 之一）。
         this.defaultTier = TIERS.stream()
                 .filter(t -> config.getDetModelPath().contains("/" + t + "/"))
@@ -66,7 +68,7 @@ public class OcrEngineManager implements DisposableBean {
      * @return 完整时返回 true
      */
     public boolean isAvailable(String tier) {
-        Path dir = MODEL_ROOT.resolve(tier);
+        Path dir = modelRoot.resolve(tier);
         return Files.isRegularFile(dir.resolve("det.onnx"))
                 && Files.isRegularFile(dir.resolve("rec.onnx"))
                 && Files.isRegularFile(dir.resolve("dict.txt"));
@@ -118,7 +120,7 @@ public class OcrEngineManager implements DisposableBean {
                     "模型档次 " + t + " 的文件未下载，请参考 README 下载到 models/ppocr-v6/" + t + "/");
         }
         return engines.computeIfAbsent(t, key -> {
-            Path dir = MODEL_ROOT.resolve(key);
+            Path dir = modelRoot.resolve(key);
             log.info("加载 {} 档 PP-OCRv6 模型: {}", key, dir);
             return new PPOcrV6Engine(PPOcrV6Config.builder()
                     // yml（含 PPOCRPropertiesCustomizer）生效后的调参作为公共基底
