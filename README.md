@@ -132,6 +132,18 @@ mkdir -p models/ppocr-v6/small && for f in det.onnx rec.onnx dict.txt; do curl -
 PPOCR_TIER=small mvn spring-boot:run
 ```
 
+## 使用建议（参数调优）
+
+详见 [USAGE.md](USAGE.md)，内容索引：
+
+| 章节 | 内容 |
+|------|------|
+| [一、流水线与参数全景](USAGE.md#一流水线与参数全景) | 全部参数的默认值、所属阶段与语义（含不可配置的硬编码值） |
+| [二、实测基准](USAGE.md#二实测基准先建立直觉) | 默认 / `max/960` / 多线程三种配置的耗时与质量对比 |
+| [三、分场景推荐](USAGE.md#三分场景推荐) | 通用文档、拍照大图、密集小字、证照票据、模糊图、截图、高并发、Python 对拍等 8 类场景的 yml 配置 |
+| [四、GPU / 加速器](USAGE.md#四gpu--加速器的真实情况) | `prefer-accelerator` 的真实行为与 CUDA 依赖替换 |
+| [五、容易踩的坑](USAGE.md#五容易踩的坑) | `rec-image-shape` 陷阱、超长文本行、内存保护、调参先后顺序 |
+
 ## 相关链接
 
 - GitHub: https://github.com/lets-mica/mica-ppocr
