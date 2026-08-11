@@ -102,6 +102,45 @@ public class OcrService {
         }));
     }
 
+    /** 异步识别的结果载体：实际生效档次、识别结果与执行耗时。 */
+    public record TimedResults(String tier, List<PPOcrV6Result> results, long costMs) {}
+
+    /**
+     * 异步识别（供任务接口）：并发闸门满时本方法直接抛 2001；
+     * 否则任务进入工作线程，完成/失败经 callback 通知（error 为 null 表示成功）。
+     * 注意：异步路径不受 ocr.timeout-ms 约束，任务总会跑到自然结束。
+     */
+    public void recognizeAsync(byte[] imageBytes, String tier, int rotate, boolean autoRotate,
+                               java.util.function.BiConsumer<TimedResults, Throwable> callback) {
+        validateRotate(rotate);
+        String resolved = (tier == null || tier.isBlank()) ? engineManager.getDefaultTier() : tier.toLowerCase();
+        try {
+            executor.submit(() -> {
+                long start = System.currentTimeMillis();
+                try {
+                    List<PPOcrV6Result> results = metered(tier, () -> {
+                        Mat image = decodeBytes(imageBytes);
+                        try {
+                            checkPixels(image);
+                            return recognizeOriented(image, tier, rotate, autoRotate);
+                        } finally {
+                            image.release();
+                        }
+                    });
+                    callback.accept(new TimedResults(resolved, results, System.currentTimeMillis() - start), null);
+                } catch (Throwable t) {
+                    callback.accept(null, t);
+                }
+                return null;
+            });
+        } catch (OcrException e) {
+            if (e.getErrorCode() == ErrorCode.RATE_LIMITED) {
+                meterRegistry.counter("ocr.rejected", "reason", "rejected").increment();
+            }
+            throw e;
+        }
+    }
+
     /**
      * 识别本地磁盘上的图片文件（demo/调试用途，不支持旋转参数）。
      */

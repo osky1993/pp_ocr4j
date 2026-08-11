@@ -87,30 +87,13 @@ public class OcrController {
      */
     @PostMapping("/api/ocr/base64")
     public ApiResult<OcrResponse> ocrBase64(@RequestBody Base64Request req) {
-        if (req.image() == null || req.image().isBlank()) {
-            throw new OcrException(ErrorCode.INVALID_PARAM, "image 字段为空");
-        }
-        String payload = req.image();
-        int comma = payload.indexOf(',');
-        if (payload.startsWith("data:") && comma > 0) {
-            payload = payload.substring(comma + 1);
-        }
-        byte[] bytes;
-        try {
-            bytes = java.util.Base64.getDecoder().decode(payload);
-        } catch (IllegalArgumentException e) {
-            throw new OcrException(ErrorCode.INVALID_PARAM, "image 不是合法的 base64 字符串");
-        }
+        byte[] bytes = req.toBytes();
         long start = System.currentTimeMillis();
         List<PPOcrV6Result> results = ocrService.recognize(bytes, req.tier(),
-                req.rotate() == null ? 0 : req.rotate(),
-                Boolean.TRUE.equals(req.autoRotate()));
+                req.rotateOrDefault(), req.autoRotateOrDefault());
         return ApiResult.ok(OcrResponse.of("base64", resolvedTier(req.tier()), results,
                 System.currentTimeMillis() - start));
     }
-
-    /** base64 接口请求体。 */
-    public record Base64Request(String image, String tier, Integer rotate, Boolean autoRotate) {}
 
     /**
      * 组件信息接口：版本、构建时间、依赖库版本、各档模型状态。灰度确认与排障入口。
