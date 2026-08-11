@@ -29,6 +29,12 @@ public class OcrProperties {
     /** API Key 白名单；空 = 鉴权关闭（内网默认），非空则校验 /api/** 的 X-API-Key 头 */
     private List<String> apiKeys = List.of();
 
+    /**
+     * 推理加速器：cpu（默认，bit-exact）/ auto / coreml（macOS）/ cuda（NVIDIA，需 -Pgpu）。
+     * 非 cpu 时使用本项目 AcceleratedPPOcrV6Engine（修复上游 provider 不生效缺陷）。
+     */
+    private String accelerator = "cpu";
+
     /** 异步任务配置 */
     private final Task task = new Task();
 
@@ -96,6 +102,14 @@ public class OcrProperties {
 
     public void setApiKeys(List<String> apiKeys) {
         this.apiKeys = apiKeys;
+    }
+
+    public String getAccelerator() {
+        return accelerator;
+    }
+
+    public void setAccelerator(String accelerator) {
+        this.accelerator = accelerator;
     }
 
     public Task getTask() {

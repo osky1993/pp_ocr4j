@@ -96,6 +96,7 @@ curl -X POST -H "Content-Type: application/json" -d '{"image":"<base64>","tier":
 | `ocr.timeout-ms` | 30000 | 同步接口识别超时（异步任务不受此限制） |
 | `ocr.warmup-tiers` | `[tiny]` | 启动预热档次；模型缺失则启动失败（fail-fast） |
 | `ocr.api-keys` | `[]` | 空 = 鉴权关闭；非空则校验 `/api/**` 的 `X-API-Key` 头 |
+| `ocr.accelerator` | `cpu` | 推理加速器：cpu / auto / coreml / cuda（见「GPU 加速」一节） |
 | `ocr.task.ttl-minutes` | 30 | 异步任务结果保留时长 |
 
 引擎调参（`mica.ai.ppocr.*`，三档共享基底）见 [USAGE.md](USAGE.md)。
@@ -111,6 +112,18 @@ ocr:
 
 调用方建议携带 `X-Caller: <系统标识>` 头——会写入访问日志（`[traceId][caller]`），
 用于「谁在用、用了多少」的容量归因。调试台页面收到 401 时会弹框输入 Key（存 localStorage）。
+
+## GPU 加速
+
+mica-ppocr 1.0.1 的 `prefer-accelerator` 存在缺陷（provider 只记日志、未应用到会话，任何平台
+都是空操作），因此本项目内置了修复版引擎 `AcceleratedPPOcrV6Engine`，由 `ocr.accelerator` 控制：
+
+- **NVIDIA CUDA**（Linux/Windows，CUDA 12.x + cuDNN 9）：`mvn -Pgpu package` 构建
+  （切换 `onnxruntime_gpu` 依赖）+ 运行时 `--ocr.accelerator=cuda`；已完成构建链路，
+  推理效果待 NVIDIA 真机压测确认；
+- **macOS CoreML**：功能可用但实测反而大幅变慢（模型图分区过碎 + 动态尺寸反复编译），
+  **不建议开启**，Mac 上保持 `cpu`——详见 [USAGE.md 第四节](USAGE.md#四gpu--加速器的真实情况)；
+- 开启任何加速器后不再保证与 Python 参考实现 bit-exact；生效配置见 `/api/ocr/info`。
 
 ## 异步任务的限制
 

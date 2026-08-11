@@ -40,6 +40,7 @@ ocr:
   timeout-ms: 30000             # 单次识别超时，超时返回 2002
   warmup-tiers: [tiny]          # 启动预热档次（校验模型文件并各跑一次小图）
   api-keys: []                  # 空 = 鉴权关闭；非空则校验 /api/** 的 X-API-Key 头
+  accelerator: cpu              # cpu（默认，bit-exact）/ auto / coreml（macOS）/ cuda（NVIDIA + -Pgpu 构建）
 
 # 模型档次（tiny/small/medium）由前端页面 / 接口 tier 参数动态切换，
 # 引擎由 OcrEngineManager 按档懒加载。本配置的作用：

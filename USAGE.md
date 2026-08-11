@@ -147,14 +147,34 @@ B 策略在高并发时会争核导致长尾，建议配合信号量把并发识
 
 ## 四、GPU / 加速器的真实情况
 
-- `prefer-accelerator: true` 的选择顺序是 CoreML > CUDA > CPU，**但**：
-  - ONNX Runtime **Java API 没有 CoreML provider**（上游仓库明确说明），
-    macOS 上这个开关实际会静默回落 CPU；
-  - 默认 Maven 依赖是 **CPU 版** onnxruntime。要用 CUDA，需把 core 的传递依赖换成
-    `com.microsoft.onnxruntime:onnxruntime_gpu`（NVIDIA GPU + Linux/Windows），
-    再开 `prefer-accelerator: true`。
-- 结论：不换依赖的情况下，这个开关在任何平台都是空操作；Apple Silicon 上的现实提速
-  手段就是 `intra-op` 多线程 + 降分辨率。
+实测与源码核查结论（mica-ppocr 1.0.1 + ONNX Runtime 1.26.0）：
+
+1. **上游 `prefer-accelerator` 是"假开关"**：`PPOcrV6Engine` 只把 `OrtProviders.resolve()`
+   选出的 provider 写进日志，**从未调用 `SessionOptions.addCoreML()/addCUDA()`**，
+   推理会话永远走 CPU。实测开关前后耗时完全一致，且日志会误导性地打出
+   `CoreMLExecutionProvider`。（已整理 issue 反馈上游。）
+2. 因此本项目内置 **`AcceleratedPPOcrV6Engine`**（逐行移植原版引擎 + 修复 EP 应用），
+   由 `ocr.accelerator: cpu | auto | coreml | cuda` 控制；`cpu`（默认）走库原版引擎，
+   保持 bit-exact。生效配置可查 `/api/ocr/info` 的 `accelerator` 字段。
+3. **macOS CoreML：能跑通但反而大幅变慢，不建议开启**。Apple Silicon 实测
+   （2988×2199 行驶证图）：tiny 3.5s（CPU 1.0s）、small 24.9s（CPU 2.8s）、medium 超 30s
+   超时。ORT 日志给出了原因：det/rec 模型图被切成 19~29 个分区（190 节点中 169 个受支持），
+   每个分区边界都要 CPU↔ANE 数据搬运，叠加 OCR 动态输入尺寸导致反复编译——
+   动态形状模型上 CoreML 的典型劣化模式。
+   （顺带证伪一点：ORT 1.26 Java 在 macOS 实际可枚举出 CORE_ML provider，
+   上游文档「Java API 没有 CoreML」的说法已过时。）
+4. **NVIDIA CUDA：构建路径已就绪，待真机验证**。步骤：
+
+   ```bash
+   mvn -Pgpu -DskipTests package   # 换用 onnxruntime_gpu 依赖（Linux/Windows）
+   java -jar target/pp-ocr4j-*.jar --ocr.accelerator=cuda
+   ```
+
+   环境要求：NVIDIA GPU + CUDA 12.x + cuDNN 9（对应 ORT 1.26）。CUDA EP 对动态形状
+   远比 CoreML 友好，预期 medium 档收益最大；上线前务必用业务图片对比精度与耗时。
+5. 开启任何加速器都会**放弃 bit-exact 保证**；对拍/回归场景保持 `cpu`。
+
+Apple Silicon 上的现实提速手段仍然是：`intra-op` 多线程 + 降分辨率 + tiny 档（见第二、三节）。
 
 ## 五、容易踩的坑
 

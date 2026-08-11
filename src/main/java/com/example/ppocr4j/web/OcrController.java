@@ -106,6 +106,7 @@ public class OcrController {
                 "version", build != null ? build.getVersion() : "unknown",
                 "buildTime", build != null && build.getTime() != null ? build.getTime().toString() : "unknown",
                 "micaPpocrVersion", build != null ? String.valueOf(build.get("mica-ppocr")) : "unknown",
+                "accelerator", engineManager.getAccelerator().name().toLowerCase(),
                 "defaultTier", engineManager.getDefaultTier(),
                 "tiers", engineManager.listTiers()));
     }

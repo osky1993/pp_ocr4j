@@ -3,7 +3,6 @@ package com.example.ppocr4j.service;
 import com.example.ppocr4j.config.OcrProperties;
 import com.example.ppocr4j.exception.OcrException;
 import com.example.ppocr4j.web.ErrorCode;
-import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Engine;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Result;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
@@ -179,7 +178,7 @@ public class OcrService {
      * 请求档次为 tiny 时直接复用试探结果，否则用最优方向再跑请求档。
      */
     private List<PPOcrV6Result> recognizeAutoRotate(Mat image, String tier) {
-        PPOcrV6Engine probe = engineManager.getEngine("tiny");
+        OcrEngine probe = engineManager.getEngine("tiny");
         int bestRotation = 0;
         double bestScore = -1;
         List<PPOcrV6Result> bestProbeResults = List.of();
