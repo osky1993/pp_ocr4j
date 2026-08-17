@@ -49,6 +49,9 @@ mvn spring-boot:run
 |------|------|------|
 | `/api/ocr` | POST (multipart) | 同步识别；参数 `file`、`tier`、`rotate`、`autoRotate` |
 | `/api/ocr/base64` | POST (JSON) | 同步识别；`{image, tier, rotate, autoRotate}`，image 支持 data URL |
+| `/api/ocr/parse/{docType}` | POST (multipart) | 证件/票据字段级结构化提取；参数同 `/api/ocr` |
+| `/api/ocr/parse/{docType}/base64` | POST (JSON) | 结构化提取（base64 形态），请求体同 `/api/ocr/base64` |
+| `/api/ocr/parse/types` | GET | 支持的证件类型列表 |
 | `/api/ocr/tasks` | POST (multipart) | 提交异步任务，参数同 `/api/ocr`，返回 `{taskId}` |
 | `/api/ocr/tasks/base64` | POST (JSON) | 提交异步任务（base64 形态） |
 | `/api/ocr/tasks/{taskId}` | GET | 查询任务：`status` = RUNNING / DONE / FAILED |
@@ -65,8 +68,30 @@ mvn spring-boot:run
 > 横拍/倒置图会自动转正（返回结果的 `rotatedDegrees` 记录角度，此时 `box` 坐标基于转正后的图像），
 > 一般无需再传 `rotate` / `autoRotate`。`autoRotate` 与 doc_ori 同时开启时为重复工作，不建议。
 
-识别结果 `data` 结构：`{source, tier, count, costMs, fullText, results: [{text, score, box}]}`，
+识别结果 `data` 结构：`{source, tier, count, costMs, fullText, results: [{text, score, box, rotatedDegrees}]}`，
 `box` 为文字框四顶点坐标（按阅读顺序），`fullText` 为按序换行拼接的整页文本。
+
+### 字段级结构化提取
+
+基于 mica-ppocr-structured 1.1.x，`docType` 支持（大小写、`-`/`_`/驼峰写法均兼容）：
+
+| docType | 证件 | 提取字段 |
+|---------|------|----------|
+| `vehicle-license` | 行驶证 | plateNo, owner, vehicleType, vin, issueDate |
+| `id-card` | 身份证 | side(FRONT/BACK), name, gender, nation, birthDate, address, idNumber, issuingAuthority, validFrom, validTo |
+| `bank-card` | 银行卡 | cardNumber, validDate, holderName, bankName, cardType |
+| `driver-license` | 驾驶证 | licenseNumber, name, gender, nationality, address, birthDate, issueDate, vehicleClass, issuingAuthority, validFrom, validTo |
+| `business-license` | 营业执照 | creditCode, name, type, legalPerson, registeredCapital, establishDate, operatingPeriod, address, businessScope |
+| `invoice` | 增值税发票 | invoiceCode, invoiceNo, invoiceDate, 买方/卖方名称·税号·地址电话·开户行, goodsName, amount, taxRate, taxAmount, totalAmountUpper/Lower, payee, reviewer, issuer |
+
+```bash
+curl -F "file=@行驶证.jpg" -F "tier=small" http://localhost:8080/api/ocr/parse/vehicle-license
+```
+
+返回 `data`：`{source, docType, tier, costMs, fields, fieldBoxes, results}`——`fields` 为业务字段
+（未识别到的字段为 null，建议业务侧对关键字段做非空与格式校验）；`fieldBoxes` 为字段名 → 命中
+文本框坐标（基于转正后图像），供可视化定位；`results` 为 OCR 原始逐行结果，供审计与兜底。
+识别底座与 `/api/ocr` 完全一致：tier/rotate/autoRotate、doc_ori 自动转正、并发闸门与错误码通用。
 
 示例：
 

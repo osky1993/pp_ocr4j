@@ -130,6 +130,41 @@ class OcrIntegrationTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void parsesVehicleLicenseFields() {
+        var form = new LinkedMultiValueMap<String, Object>();
+        form.add("file", new FileSystemResource("test_images/1.png"));
+        form.add("tier", "tiny");
+        Map<String, Object> body = postImage("/api/ocr/parse/vehicle-license", form);
+
+        assertThat(body.get("code")).isEqualTo(0);
+        Map<String, Object> data = (Map<String, Object>) body.get("data");
+        assertThat(data.get("docType")).isEqualTo("vehicle-license");
+        // 字段级断言：结构化解析器必须抽准车牌号
+        Map<String, Object> fields = (Map<String, Object>) data.get("fields");
+        assertThat(fields.get("plateNo")).isEqualTo("京N99FF7");
+        // fields 中不应混入基类的 rawResults / fieldBoxes（它们以独立字段返回）
+        assertThat(fields).doesNotContainKeys("rawResults", "fieldBoxes");
+        assertThat((Map<String, Object>) data.get("fieldBoxes")).containsKey("plateNo");
+        assertThat((List<?>) data.get("results")).isNotEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void parseTypesAndUnknownType() {
+        Map<String, Object> types = rest.getForObject("/api/ocr/parse/types", Map.class);
+        assertThat(types.get("code")).isEqualTo(0);
+        List<String> list = (List<String>) ((Map<String, Object>) types.get("data")).get("types");
+        assertThat(list).contains("vehicle-license", "id-card", "bank-card",
+                "driver-license", "business-license", "invoice");
+
+        var form = new LinkedMultiValueMap<String, Object>();
+        form.add("file", new FileSystemResource("test_images/1.png"));
+        Map<String, Object> body = postImage("/api/ocr/parse/passport", form);
+        assertThat(body.get("code")).isEqualTo(1001);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void tiersAndInfoEndpoints() {
         Map<String, Object> tiers = rest.getForObject("/api/ocr/tiers", Map.class);
         assertThat(tiers.get("code")).isEqualTo(0);
