@@ -1,6 +1,8 @@
 # 使用建议：mica-ppocr 参数调优指南
 
-> 基于 mica-ppocr 1.0.1 源码（含 sources jar）逐行核对，默认值为 `PPOcrV6Config.defaults()`
+> 基于 mica-ppocr 1.1.3 源码（含 sources jar）逐行核对（性能基准实测于 1.0.1，
+> 1.1.3 推理流水线一致、数量级不变；1.1.1+ 新增的 doc_ori 方向分类每张图增加一次
+> 轻量级分类推理），默认值为 `PPOcrV6Config.defaults()`
 > 实测输出；性能数据实测于 Apple Silicon（4 性能核 + 6 能效核），测试图为
 > `test_images/1.png`（2988×2199 行驶证照片），热身后取稳定值。
 
@@ -19,6 +21,9 @@
 | `det-unclip-ratio` | 1.5 | DB 后处理 | 文字框向外扩张比例：大 → 框宽松；小 → 框紧凑 |
 | `rec-image-shape` | [3,48,320] | 识别预处理 | **只有 H=48 实际生效**（源码中宽度 320~3200 硬编码），须与模型匹配，勿改 |
 | `rec-batch-size` | 6 | 识别推理 | 每次 ONNX 推理喂入的文本行数，只影响性能不影响结果 |
+| `use-doc-orientation-classify` | false* | 方向分类 | 1.1.1+：检测前用 doc_ori 模型（4 类 0/90/180/270）自动转正整图；本项目 yml 中已开启 |
+| `doc-orientation-model-path` | — | 方向分类 | doc_ori 模型路径（三档共享，本项目位于 models/ppocr-v6/doc_ori/） |
+| `doc-orientation-thresh` | 0.3 | 方向分类 | 方向判定置信度阈值，低于阈值按 0° 处理 |
 | `intra-op-num-threads` | 1 | ONNX Runtime | 单个算子内部并行线程数——CPU 上最主要的提速旋钮 |
 | `inter-op-num-threads` | 1 | ONNX Runtime | 算子间并行，OCR 模型是顺序图，**保持 1 即可** |
 | `prefer-accelerator` | false | ONNX Runtime | true 时按 CoreML > CUDA > CPU 自动选择（见第四节的重要限制） |
@@ -147,7 +152,7 @@ B 策略在高并发时会争核导致长尾，建议配合信号量把并发识
 
 ## 四、GPU / 加速器的真实情况
 
-实测与源码核查结论（mica-ppocr 1.0.1 + ONNX Runtime 1.26.0）：
+实测与源码核查结论（缺陷确认于 1.0.1 + ORT 1.26.0，并已在 1.1.3 + ORT 1.18.0 复核仍然存在）：
 
 1. **上游 `prefer-accelerator` 是"假开关"**：`PPOcrV6Engine` 只把 `OrtProviders.resolve()`
    选出的 provider 写进日志，**从未调用 `SessionOptions.addCoreML()/addCUDA()`**，
@@ -161,8 +166,8 @@ B 策略在高并发时会争核导致长尾，建议配合信号量把并发识
    超时。ORT 日志给出了原因：det/rec 模型图被切成 19~29 个分区（190 节点中 169 个受支持），
    每个分区边界都要 CPU↔ANE 数据搬运，叠加 OCR 动态输入尺寸导致反复编译——
    动态形状模型上 CoreML 的典型劣化模式。
-   （顺带证伪一点：ORT 1.26 Java 在 macOS 实际可枚举出 CORE_ML provider，
-   上游文档「Java API 没有 CoreML」的说法已过时。）
+   （顺带证伪一点：ORT Java 在 macOS 实际可枚举出 CORE_ML provider——1.26 与
+   1.1.3 降级后的 1.18 均已实测确认，上游文档「Java API 没有 CoreML」的说法已过时。）
 4. **NVIDIA CUDA：构建路径已就绪，待真机验证**。步骤：
 
    ```bash
@@ -170,7 +175,8 @@ B 策略在高并发时会争核导致长尾，建议配合信号量把并发识
    java -jar target/pp-ocr4j-*.jar --ocr.accelerator=cuda
    ```
 
-   环境要求：NVIDIA GPU + CUDA 12.x + cuDNN 9（对应 ORT 1.26）。CUDA EP 对动态形状
+   环境要求：NVIDIA GPU + CUDA 11.8 + cuDNN 8（对应 mica-ppocr 1.1.3 传递的 ORT 1.18，
+   以 ORT 官方版本矩阵为准）。CUDA EP 对动态形状
    远比 CoreML 友好，预期 medium 档收益最大；上线前务必用业务图片对比精度与耗时。
 5. 开启任何加速器都会**放弃 bit-exact 保证**；对拍/回归场景保持 `cpu`。
 

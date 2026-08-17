@@ -19,7 +19,7 @@
 
     <properties>
         <java.version>17</java.version>
-        <mica.ppocr.version>1.0.1</mica.ppocr.version>
+        <mica.ppocr.version>1.1.3</mica.ppocr.version>
     </properties>
 
     <dependencies>
@@ -53,7 +53,9 @@
     <profiles>
         <!-- NVIDIA CUDA 构建（Linux/Windows）：mvn -Pgpu package
              把 mica-ppocr 传递的 CPU 版 onnxruntime 换成 onnxruntime_gpu（含 CUDA EP 原生库），
-             运行时配 ocr.accelerator: cuda（或 auto）。环境要求：CUDA 12.x + cuDNN 9。
+             运行时配 ocr.accelerator: cuda（或 auto）。
+             版本须与 mica-ppocr-core 传递的 onnxruntime 一致（1.1.3 → ORT 1.18.0，
+             对应 CUDA 11.8 + cuDNN 8，见 ORT 官方版本矩阵）。
              注意 onnxruntime_gpu 无 macOS 原生库，本 profile 不能在 Mac 上运行。 -->
         <profile>
             <id>gpu</id>
@@ -72,7 +74,7 @@
                 <dependency>
                     <groupId>com.microsoft.onnxruntime</groupId>
                     <artifactId>onnxruntime_gpu</artifactId>
-                    <version>1.26.0</version>
+                    <version>1.18.0</version>
                 </dependency>
             </dependencies>
         </profile>

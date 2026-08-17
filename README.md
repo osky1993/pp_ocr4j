@@ -8,14 +8,16 @@
 > 现已按「内部可信接口调用的独立组件」定位补齐工程化能力。
 >
 > 注意：文章中依赖坐标写的是 `net.dreamlu.mica.ai`，Maven Central 上实际发布的 groupId 是
-> **`net.dreamlu`**（本项目版本 `1.0.1`）；`PPOcrV6Result` 实际位于
+> **`net.dreamlu`**（本项目版本 `1.1.3`）；`PPOcrV6Result` 实际位于
 > `net.dreamlu.mica.ai.ppocr.engine` 包（文章写的 `config` 包有误）。
 
 ## 能力一览
 
 - **三档模型**（tiny/small/medium）请求级动态切换，按档懒加载、共享调参基底；
 - **同步 / 异步**识别接口，multipart 与 base64 双输入形态；
-- **旋转转正**：`rotate` 指定角度或 `autoRotate` 四方向自动试探（流水线无方向分类器，横拍图必须转正）;
+- **方向自动转正**：1.1.1+ 官方文档方向分类（doc_ori 模型，本项目默认开启）在检测前自动把
+  横拍/倒置图转正，结果的 `rotatedDegrees` 记录应用角度；`rotate` / `autoRotate` 参数保留
+  用于关闭 doc_ori 或需要显式控制的场景；
 - **资源保护**：并发闸门（超限即拒 2001）、识别超时（2002）、像素上限（防解码炸弹）；
 - **统一契约**：`{code, message, traceId, data}` 响应 + 错误码表 + X-Request-Id 全链路追踪；
 - **可观测性**：liveness/readiness 探针、Prometheus 指标、启动自检预热、版本信息接口；
@@ -58,6 +60,10 @@ mvn spring-boot:run
 
 参数说明：`tier` = tiny/small/medium（缺省用默认档）；`rotate` = 0/90/180/270（识别前顺时针转正）；
 `autoRotate` = true 时忽略 rotate，用 tiny 档四方向试探选优（约 4 倍 tiny 耗时）。
+
+> 服务端已默认开启官方文档方向分类（`mica.ai.ppocr.use-doc-orientation-classify`），
+> 横拍/倒置图会自动转正（返回结果的 `rotatedDegrees` 记录角度，此时 `box` 坐标基于转正后的图像），
+> 一般无需再传 `rotate` / `autoRotate`。`autoRotate` 与 doc_ori 同时开启时为重复工作，不建议。
 
 识别结果 `data` 结构：`{source, tier, count, costMs, fullText, results: [{text, score, box}]}`，
 `box` 为文字框四顶点坐标（按阅读顺序），`fullText` 为按序换行拼接的整页文本。
@@ -115,10 +121,10 @@ ocr:
 
 ## GPU 加速
 
-mica-ppocr 1.0.1 的 `prefer-accelerator` 存在缺陷（provider 只记日志、未应用到会话，任何平台
+mica-ppocr 1.1.3 的 `prefer-accelerator` 仍存在缺陷（provider 只记日志、未应用到会话，任何平台
 都是空操作），因此本项目内置了修复版引擎 `AcceleratedPPOcrV6Engine`，由 `ocr.accelerator` 控制：
 
-- **NVIDIA CUDA**（Linux/Windows，CUDA 12.x + cuDNN 9）：`mvn -Pgpu package` 构建
+- **NVIDIA CUDA**（Linux/Windows，CUDA 11.8 + cuDNN 8，对应 ORT 1.18）：`mvn -Pgpu package` 构建
   （切换 `onnxruntime_gpu` 依赖）+ 运行时 `--ocr.accelerator=cuda`；已完成构建链路，
   推理效果待 NVIDIA 真机压测确认；
 - **macOS CoreML**：功能可用但实测反而大幅变慢（模型图分区过碎 + 动态尺寸反复编译），
@@ -159,6 +165,7 @@ mkdir -p models/ppocr-v6/small && for f in det.onnx rec.onnx dict.txt; do curl -
 pp_ocr4j/
 ├── pom.xml
 ├── models/ppocr-v6/tiny/                    # tiny 档模型（small/medium 不入库，见 .gitignore）
+├── models/ppocr-v6/doc_ori/doc_ori.onnx     # 文档方向分类模型（默认开启，三档共享，随仓库提交）
 ├── test_images/1.png                        # 集成回归测试用图
 ├── .github/workflows/ci.yml                 # CI：JDK17 + mvn package（含集成测试）
 └── src/

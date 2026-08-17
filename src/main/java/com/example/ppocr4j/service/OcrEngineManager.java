@@ -160,6 +160,10 @@ public class OcrEngineManager implements DisposableBean {
                     .preferAccelerator(baseConfig.isPreferAccelerator())
                     .intraOpNumThreads(baseConfig.getIntraOpNumThreads())
                     .interOpNumThreads(baseConfig.getInterOpNumThreads())
+                    // 1.1.1+ 文档方向分类：doc_ori 模型全档共享，随基底配置传递
+                    .useDocOrientationClassify(baseConfig.isUseDocOrientationClassify())
+                    .docOrientationModelPath(baseConfig.getDocOrientationModelPath())
+                    .docOrientationThresh(baseConfig.getDocOrientationThresh())
                     // 仅模型路径按档次替换
                     .detModelPath(dir.resolve("det.onnx").toString())
                     .recModelPath(dir.resolve("rec.onnx").toString())
@@ -190,7 +194,8 @@ public class OcrEngineManager implements DisposableBean {
 
         @Override
         public List<PPOcrV6Result> run(Mat imgBgr) {
-            return delegate.run(imgBgr);
+            // 1.1.x 起 Mat 入参重命名为 runMat（Mat 生命周期由调用方管理，与本项目约定一致）
+            return delegate.runMat(imgBgr);
         }
 
         @Override

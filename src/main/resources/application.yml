@@ -53,6 +53,11 @@ mica:
       det-model-path: models/ppocr-v6/tiny/det.onnx    # 默认档：文字检测模型
       rec-model-path: models/ppocr-v6/tiny/rec.onnx    # 默认档：文字识别模型
       rec-char-dict-path: models/ppocr-v6/tiny/dict.txt
+      # 1.1.1+ 文档方向分类（PP-LCNet doc_ori，4 类 0/90/180/270）：检测前自动把横拍/倒置图转正，
+      # 三档共享同一模型；结果的 rotatedDegrees 字段记录应用的旋转角度
+      use-doc-orientation-classify: true
+      doc-orientation-model-path: models/ppocr-v6/doc_ori/doc_ori.onnx
+      # doc-orientation-thresh: 0.3
       # 可选调参项，对三档统一生效（默认 CPU 单线程，保证与 Python 参考实现 bit-exact）：
       # det-thresh: 0.3
       # det-box-thresh: 0.6

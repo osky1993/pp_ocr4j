@@ -15,11 +15,14 @@ public record OcrResponse(String source, String tier, int count, long costMs,
      *
      * @param text 识别到的文字内容
      * @param score 置信度分数，范围约 0~1
-     * @param box 文字框四点坐标，结构为 {@code [[x,y],[x,y],[x,y],[x,y]}
+     * @param box 文字框四点坐标，结构为 {@code [[x,y],[x,y],[x,y],[x,y]}；
+     *            rotatedDegrees 非 0 时坐标基于「转正后」的图像
+     * @param rotatedDegrees 文档方向分类对原图应用的顺时针旋转角度（0/90/180/270），
+     *                       未启用 doc_ori 或图片本身正向时为 0
      */
-    public record Item(String text, float score, List<List<Integer>> box) {
+    public record Item(String text, float score, List<List<Integer>> box, int rotatedDegrees) {
         static Item from(PPOcrV6Result r) {
-            return new Item(r.text(), r.score(), r.boxAsNestedList());
+            return new Item(r.text(), r.score(), r.boxAsNestedList(), r.rotatedDegrees());
         }
     }
 
