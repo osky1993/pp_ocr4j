@@ -87,6 +87,22 @@
   .tier-group button.selected { background: var(--primary); color: #fff; }
   .tier-group button:disabled { color: #d1d5db; cursor: not-allowed; }
   .tier-desc { font-size: 12px; color: var(--muted); }
+  /* 证件类型选择器 */
+  #docTypeSel {
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    font-size: 13px; color: var(--text); background: var(--card); cursor: pointer;
+  }
+  /* 结构化字段表 */
+  #fieldsPanel { margin-bottom: 12px; }
+  #fieldsPanel h3 { font-size: 13px; margin-bottom: 6px; }
+  #fieldsPanel .hint-inline { font-weight: normal; font-size: 11px; color: var(--muted); }
+  #fieldsTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #fieldsTable tr { border-bottom: 1px solid var(--border); cursor: default; }
+  #fieldsTable tr:hover, #fieldsTable tr.active { background: #f5f3ff; }
+  #fieldsTable td { padding: 6px 8px; vertical-align: top; }
+  #fieldsTable td.k { color: var(--muted); white-space: nowrap; width: 1%; }
+  #fieldsTable td.v { word-break: break-all; }
+  #fieldsTable td.v.null { color: #d97706; }
   /* 状态条 */
   #status { font-size: 13px; color: var(--muted); }
   #status.error { color: #dc2626; }
@@ -144,6 +160,15 @@
       <button id="rotateRBtn" class="btn-ghost" disabled title="向右旋转 90°">↻ 右转</button>
       <div class="tier-group" id="tierGroup" title="模型档次"></div>
       <span class="tier-desc" id="tierDesc"></span>
+      <select id="docTypeSel" title="结构化提取：选择证件类型后走 /api/ocr/parse/{docType}">
+        <option value="">纯识别（不做结构化）</option>
+        <option value="vehicle-license">行驶证</option>
+        <option value="id-card">身份证</option>
+        <option value="bank-card">银行卡</option>
+        <option value="driver-license">驾驶证</option>
+        <option value="business-license">营业执照</option>
+        <option value="invoice">增值税发票</option>
+      </select>
       <label><input type="checkbox" id="showBoxes" checked> 显示文字框</label>
       <span id="status"></span>
     </div>
@@ -153,6 +178,10 @@
   <section class="card" id="resultPanel">
     <h2>识别结果</h2>
     <div id="summary"></div>
+    <div id="fieldsPanel" style="display:none">
+      <h3>结构化字段 <span class="hint-inline">悬停行可在画布定位字段来源</span></h3>
+      <table id="fieldsTable"></table>
+    </div>
     <div id="resultList"><div class="empty">上传图片并点击「开始识别」</div></div>
     <button id="copyBtn" class="btn-ghost" style="display:none">复制全部文本</button>
   </section>
@@ -180,9 +209,15 @@
   // 保证识别框坐标与所见图像一致
   const rawCanvas = document.createElement('canvas');
   const rawCtx = rawCanvas.getContext('2d');
-  let results = [];          // [{text, score, box:[[x,y]*4]}]
+  let results = [];          // [{text, score, box:[[x,y]*4], rotatedDegrees}]
   let activeIndex = -1;
   let selectedTier = null;
+  // 结构化提取状态：选中的证件类型、字段坐标（字段名 → 文本框列表）、悬停高亮的字段
+  const docTypeSel = document.getElementById('docTypeSel');
+  const fieldsPanel = document.getElementById('fieldsPanel');
+  const fieldsTable = document.getElementById('fieldsTable');
+  let fieldBoxes = {};
+  let activeField = null;
   // 缓存本地已完成过识别的档次，避免重复提示“首次加载耗时”
   let loadedTiers = new Set();
 
@@ -262,6 +297,9 @@
   function loadFile(file) {
     currentFile = file;
     results = [];
+    fieldBoxes = {};
+    activeField = null;
+    renderFields(null);
     renderResults();
     // 用本地临时 URL 预览图片，避免上传后才更新画布
     const url = URL.createObjectURL(file);
@@ -282,8 +320,8 @@
   }
 
   // ---- 旋转 ----
-  // mica-ppocr 的 PP-OCRv6 流水线没有方向分类器（cls 模型），文字必须大致水平；
-  // 横拍/倒置图需先在前端转正，识别时上传的是旋转后的图，box 坐标与所见一致。
+  // 服务端已默认开启 doc_ori 方向分类（横拍/倒置图自动转正，识别后画布会同步转到一致方向）；
+  // 手动旋转按钮保留用于 doc_ori 误判或非 90° 整数倍的兜底场景。
   const rotateLBtn = document.getElementById('rotateLBtn');
   const rotateRBtn = document.getElementById('rotateRBtn');
   rotateLBtn.addEventListener('click', () => rotate(-90));
@@ -294,6 +332,9 @@
     rotation = (rotation + delta + 360) % 360;
     results = [];
     activeIndex = -1;
+    fieldBoxes = {};
+    activeField = null;
+    renderFields(null);
     renderResults();
     applyRotation();
     setStatus(rotation === 0 ? '' : `已旋转 ${rotation}°，识别时将使用旋转后的图片`);
@@ -318,11 +359,14 @@
   resetBtn.addEventListener('click', () => {
     currentFile = null; currentImage = null; results = []; activeIndex = -1;
     rotation = 0;
+    fieldBoxes = {};
+    activeField = null;
     fileInput.value = '';
     canvasWrap.style.display = 'none';
     dropzone.style.display = 'block';
     ocrBtn.disabled = true;
     rotateLBtn.disabled = rotateRBtn.disabled = true;
+    renderFields(null);
     renderResults();
     setStatus('');
   });
@@ -343,18 +387,33 @@
         fd.append('file', blob, currentFile.name || 'rotated.jpg');
       }
       if (selectedTier) fd.append('tier', selectedTier);
-      // 返回值中的 count/costMs/results 用于页面摘要与可视化渲染
-      const resp = await apiFetch('/api/ocr', { method: 'POST', body: fd });
+      // 选择了证件类型 → 走结构化提取接口，否则纯识别
+      const docType = docTypeSel.value;
+      const url = docType ? `/api/ocr/parse/${docType}` : '/api/ocr';
+      const resp = await apiFetch(url, { method: 'POST', body: fd });
       const respBody = await resp.json();
       // 统一响应结构：code !== 0 时 message 为错误信息
       if (!resp.ok || respBody.code !== 0) throw new Error(respBody.message || ('HTTP ' + resp.status));
       const data = respBody.data;
       results = data.results;
+      fieldBoxes = data.fieldBoxes || {};
       activeIndex = -1;
+      activeField = null;
       loadedTiers.add(data.tier);
       updateTierDesc();
-      setStatus(`完成：${data.count} 个文本区域，耗时 ${data.costMs} ms（${data.tier}）`);
-      summaryEl.innerHTML = `<span class="badge">${escapeHtml(data.tier)}</span><span class="badge">${data.count} 条</span><span class="badge">${data.costMs} ms</span>${escapeHtml(data.source || '')}`;
+      // 服务端 doc_ori 自动转正时（rotatedDegrees 非 0），把画布同步转到与返回坐标一致的方向
+      const deg = results.length ? (results[0].rotatedDegrees || 0) : 0;
+      let oriNote = '';
+      if (deg) {
+        rotation = (rotation + 360 - deg) % 360;
+        applyRotation();
+        oriNote = `，服务端已自动转正 ${deg}°`;
+      }
+      const count = data.count != null ? data.count : results.length;
+      const typeBadge = docType ? `<span class="badge">${escapeHtml(data.docType)}</span>` : '';
+      setStatus(`完成：${count} 个文本区域，耗时 ${data.costMs} ms（${data.tier}）${oriNote}`);
+      summaryEl.innerHTML = `${typeBadge}<span class="badge">${escapeHtml(data.tier)}</span><span class="badge">${count} 条</span><span class="badge">${data.costMs} ms</span>${escapeHtml(data.source || '')}`;
+      renderFields(docType ? data.fields : null);
       renderResults();
       draw();
     } catch (err) {
@@ -389,8 +448,48 @@
       }
       ctx.stroke();
     });
+    // 结构化字段高亮：悬停字段行时，紫色填充该字段命中的文本框
+    if (activeField && fieldBoxes[activeField]) {
+      fieldBoxes[activeField].forEach(box => {
+        ctx.beginPath();
+        ctx.moveTo(box[0][0], box[0][1]);
+        for (let k = 1; k < 4; k++) ctx.lineTo(box[k][0], box[k][1]);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(139,92,246,.3)';
+        ctx.fill();
+        ctx.strokeStyle = '#7c3aed';
+        ctx.lineWidth = lw * 1.6;
+        ctx.stroke();
+      });
+    }
   }
   showBoxes.addEventListener('change', draw);
+
+  // ---- 结构化字段表 ----
+  function renderFields(fields) {
+    if (!fields) {
+      fieldsPanel.style.display = 'none';
+      fieldsTable.innerHTML = '';
+      return;
+    }
+    fieldsPanel.style.display = 'block';
+    fieldsTable.innerHTML = Object.entries(fields).map(([k, v]) => `
+      <tr data-field="${escapeHtml(k)}">
+        <td class="k">${escapeHtml(k)}</td>
+        <td class="v ${v == null ? 'null' : ''}">${v == null ? '—（未识别到）' : escapeHtml(String(v))}</td>
+      </tr>`).join('');
+    fieldsTable.querySelectorAll('tr').forEach(tr => {
+      tr.addEventListener('mouseenter', () => setActiveField(tr.dataset.field));
+      tr.addEventListener('mouseleave', () => setActiveField(null));
+    });
+  }
+
+  function setActiveField(field) {
+    activeField = field;
+    fieldsTable.querySelectorAll('tr').forEach(tr =>
+      tr.classList.toggle('active', tr.dataset.field === field));
+    draw();
+  }
 
   // 点击画布定位到对应结果
   canvas.addEventListener('click', e => {

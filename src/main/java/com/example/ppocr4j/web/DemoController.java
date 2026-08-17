@@ -34,4 +34,10 @@ public class DemoController {
         return ApiResult.ok(OcrResponse.of("test_images/1.png", resolved, results,
                 System.currentTimeMillis() - start));
     }
+
+    /** 返回自带测试图原始字节，供调试台/联调方同源获取样例图片。 */
+    @GetMapping(value = "/api/ocr/demo-image", produces = org.springframework.http.MediaType.IMAGE_PNG_VALUE)
+    public byte[] demoImage() throws java.io.IOException {
+        return java.nio.file.Files.readAllBytes(java.nio.file.Path.of("test_images/1.png"));
+    }
 }
