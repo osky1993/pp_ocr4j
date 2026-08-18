@@ -26,6 +26,9 @@ public class DemoController {
         this.engineManager = engineManager;
     }
 
+    /**
+     * demo 接口：识别仓库测试图，便于前端/联调端快速验通模型是否可用。
+     */
     @GetMapping("/api/ocr/demo")
     public ApiResult<OcrResponse> demo(@RequestParam(value = "tier", required = false) String tier) {
         long start = System.currentTimeMillis();
@@ -35,7 +38,11 @@ public class DemoController {
                 System.currentTimeMillis() - start));
     }
 
-    /** 返回自带测试图原始字节，供调试台/联调方同源获取样例图片。 */
+    /**
+     * 返回测试图原始字节（PNG），用于调试台与联调方“同源样例”复现。
+     *
+     * @throws IOException 文件不存在或不可读时抛出
+     */
     @GetMapping(value = "/api/ocr/demo-image", produces = org.springframework.http.MediaType.IMAGE_PNG_VALUE)
     public byte[] demoImage() throws java.io.IOException {
         return java.nio.file.Files.readAllBytes(java.nio.file.Path.of("test_images/1.png"));

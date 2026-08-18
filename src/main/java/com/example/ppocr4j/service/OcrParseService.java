@@ -78,6 +78,11 @@ public class OcrParseService {
         return new Outcome(canonical, results, extractFields(parsed), parsed.getFieldBoxes());
     }
 
+    /**
+     * docType 归一化：去除连字符/下划线并转小写，保证前端传入 id_card/id-card/idCard 等兼容。
+     *
+     * @throws OcrException 当类型为空或不在白名单内
+     */
     private String canonicalType(String docType) {
         if (docType == null || docType.isBlank()) {
             throw new OcrException(ErrorCode.INVALID_PARAM, "docType 为空，可选值: " + parsers.keySet());

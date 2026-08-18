@@ -21,6 +21,9 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    /**
+     * 业务异常兜底：将 OcrException 转为统一结构并保留原始 HTTP 状态码语义。
+     */
     @ExceptionHandler(OcrException.class)
     public ResponseEntity<ApiResult<Void>> ocrException(OcrException e) {
         ErrorCode ec = e.getErrorCode();
@@ -33,7 +36,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ec.httpStatus()).body(ApiResult.error(ec, e.getMessage()));
     }
 
-    /** 兼容仍在抛 IllegalArgumentException 的旧路径，一律按参数错误处理。 */
+    /**
+     * 兼容仍在抛 IllegalArgumentException 的旧路径，一律按参数错误处理。
+     *
+     * <p>例如早期自定义实现或第三方库在参数非法时仍抛 Java 标准异常时，统一映射为 1001。</p>
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResult<Void>> illegalArgument(IllegalArgumentException e) {
         log.warn("参数错误: {}", e.getMessage());
@@ -41,6 +48,9 @@ public class GlobalExceptionHandler {
                 .body(ApiResult.error(ErrorCode.INVALID_PARAM, e.getMessage()));
     }
 
+    /**
+     * 上传体积超上限统一处理，避免 500 白页与模糊错误信息。
+     */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResult<Void>> uploadTooLarge(MaxUploadSizeExceededException e) {
         return ResponseEntity.status(ErrorCode.IMAGE_TOO_LARGE.httpStatus())
@@ -53,20 +63,26 @@ public class GlobalExceptionHandler {
                 .body(ApiResult.error(ErrorCode.INVALID_PARAM, "缺少必要参数: " + e.getMessage()));
     }
 
-    /** 非 multipart 请求打到 multipart 接口（如空 POST /api/ocr）。 */
+    /**
+     * 非 multipart 请求打到 multipart 接口（如空 POST /api/ocr）时返回参数错误，便于前端修复请求格式。
+     */
     @ExceptionHandler(MultipartException.class)
     public ResponseEntity<ApiResult<Void>> notMultipart(MultipartException e) {
         return ResponseEntity.status(ErrorCode.INVALID_PARAM.httpStatus())
                 .body(ApiResult.error(ErrorCode.INVALID_PARAM, "请求必须为 multipart/form-data 且携带 file 字段"));
     }
 
-    /** 静态资源 404 保持原语义，不包装成 5000。 */
+    /**
+     * 静态资源 404 保持原语义，不包装成 5000。
+     * 这样前端可直接区分“资源不存在”与“业务错误”。
+     */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiResult<Void>> notFound(NoResourceFoundException e) {
         return ResponseEntity.status(404)
                 .body(ApiResult.error(ErrorCode.INVALID_PARAM, "资源不存在: /" + e.getResourcePath()));
     }
 
+    /** 全局兜底：未分支异常统一返回 5000，避免把堆栈外泄给调用方。 */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResult<Void>> unexpected(Exception e) {
         log.error("未预期异常", e);

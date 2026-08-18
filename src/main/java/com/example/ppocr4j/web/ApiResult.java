@@ -11,14 +11,21 @@ import org.slf4j.MDC;
  */
 public record ApiResult<T>(int code, String message, String traceId, T data) {
 
+    /**
+     * 标准成功响应构造：固定返回 code=0 与 success，traceId 自动从 MDC 读取。
+     */
     public static <T> ApiResult<T> ok(T data) {
         return new ApiResult<>(ErrorCode.OK.code(), "success", currentTraceId(), data);
     }
 
+    /**
+     * 标准错误响应构造：code/message 来源 ErrorCode，data 固定为 null。
+     */
     public static ApiResult<Void> error(ErrorCode errorCode, String message) {
         return new ApiResult<>(errorCode.code(), message, currentTraceId(), null);
     }
 
+    /** 优先读取日志上下文里的 traceId，空时返回 null 由上层 JSON 正常输出。 */
     static String currentTraceId() {
         return MDC.get(TraceIdFilter.TRACE_ID);
     }

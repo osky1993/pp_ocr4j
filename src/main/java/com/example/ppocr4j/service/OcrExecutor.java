@@ -39,6 +39,13 @@ public class OcrExecutor implements DisposableBean {
     private final long timeoutMs;
     private final int concurrency;
 
+    /**
+     * 初始化并发闸门。
+     *
+     * <p>concurrency 为 0 时按 CPU 核数兜底；线程名使用 ocr-worker-* 便于线上抓取火焰图。</p>
+     *
+     * @param props 组件配置
+     */
     public OcrExecutor(OcrProperties props) {
         this.concurrency = props.effectiveConcurrency();
         this.timeoutMs = props.getTimeoutMs();
@@ -86,7 +93,11 @@ public class OcrExecutor implements DisposableBean {
         return pool.submit(withMdc(task));
     }
 
-    /** 把提交线程的 MDC（traceId 等）透传到工作线程，日志保持可追踪；并保证许可释放。 */
+    /**
+     * 把提交线程的 MDC（traceId 等）透传到工作线程，日志保持可追踪；并保证许可释放。
+     *
+     * <p>通过 finally 无条件 release，避免任务异常/超时导致许可泄漏。</p>
+     */
     private <T> Callable<T> withMdc(Callable<T> task) {
         var context = MDC.getCopyOfContextMap();
         return () -> {
@@ -102,10 +113,12 @@ public class OcrExecutor implements DisposableBean {
         };
     }
 
+    /** 当前可用许可数；用于监控“可立即服务容量”。 */
     public int availablePermits() {
         return permits.availablePermits();
     }
 
+    /** 关闭线程池，触发拒绝新任务并等待在执行任务自然结束。 */
     @Override
     public void destroy() {
         pool.shutdown();

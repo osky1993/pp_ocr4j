@@ -8,9 +8,13 @@ import java.util.Base64;
  * base64 图片识别请求体（同步接口与异步任务接口共用）。
  * image 支持裸 base64 或 data URL（data:image/png;base64,...）。
  */
-public record Base64Request(String image, String tier, Integer rotate, Boolean autoRotate) {
+    public record Base64Request(String image, String tier, Integer rotate, Boolean autoRotate) {
 
-    /** 校验并解码 image 字段。 */
+    /**
+     * 校验并解码 image 字段。
+     *
+     * <p>支持裸 Base64 与 data URL 两种格式，失败时抛 INVALID_PARAM，避免把解码异常泄漏为 500。</p>
+     */
     public byte[] toBytes() {
         if (image == null || image.isBlank()) {
             throw new OcrException(ErrorCode.INVALID_PARAM, "image 字段为空");
@@ -27,10 +31,12 @@ public record Base64Request(String image, String tier, Integer rotate, Boolean a
         }
     }
 
+    /** rotate 缺省值回退 0，单位度，支持值见 OcrService validateRotate。 */
     public int rotateOrDefault() {
         return rotate == null ? 0 : rotate;
     }
 
+    /** autoRotate 缺省值回退 false；仅检查空值与 Boolean.TRUE。 */
     public boolean autoRotateOrDefault() {
         return Boolean.TRUE.equals(autoRotate);
     }

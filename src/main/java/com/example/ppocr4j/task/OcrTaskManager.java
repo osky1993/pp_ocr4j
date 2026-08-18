@@ -32,12 +32,12 @@ public class OcrTaskManager {
 
     public enum Status { RUNNING, DONE, FAILED }
 
-    /** 任务记录：终态字段由工作线程写、查询线程读，全部 volatile。 */
-    public static class TaskRecord {
-        private final String taskId;
-        private final Instant createdAt;
-        private volatile Status status = Status.RUNNING;
-        private volatile OcrResponse result;
+        /** 任务记录：终态字段由工作线程写、查询线程读，全部 volatile。 */
+        public static class TaskRecord {
+            private final String taskId;
+            private final Instant createdAt;
+            private volatile Status status = Status.RUNNING;
+            private volatile OcrResponse result;
         private volatile Integer errorCode;
         private volatile String errorMessage;
         private volatile Instant finishedAt;
@@ -47,6 +47,11 @@ public class OcrTaskManager {
             this.createdAt = Instant.now();
         }
 
+        /**
+         * 导出任务查询视图：仅暴露 API 需要的字段，避免返回内部可变句柄。
+         *
+         * <p>status 不同时，字段会按需裁剪（例如 RUNNING 仅返回 taskId/status）。</p>
+         */
         public Map<String, Object> toView() {
             var view = new java.util.LinkedHashMap<String, Object>();
             view.put("taskId", taskId);
