@@ -144,6 +144,53 @@ ocr:
 调用方建议携带 `X-Caller: <系统标识>` 头——会写入访问日志（`[traceId][caller]`），
 用于「谁在用、用了多少」的容量归因。调试台页面收到 401 时会弹框输入 Key（存 localStorage）。
 
+## Linux 生产部署（CPU）
+
+无 GPU 服务器用默认构建即可（CPU 版 onnxruntime，`ocr.accelerator: cpu`），
+onnxruntime 与 OpenCV 的 jar 内置 linux-x64 原生库，Mac 上打的包可直接部署。
+服务器只需 **JDK/JRE 17+**，无需装任何原生依赖。
+
+**glibc 前置要求**：onnxruntime ≥1.17 的官方 Linux 库基于 manylinux_2_28 构建，
+要求 **glibc ≥ 2.28**（Ubuntu 20.04+ / Debian 11+ / Rocky·Alma 8+）。CentOS 7 / RHEL 7
+（glibc 2.17）直接跑 jar 会报 `GLIBC_2.27' not found`——这类旧系统请走下方 Docker 路线
+（容器自带新 glibc，宿主机只需 Docker）。
+
+### 方式一：systemd 直跑（glibc ≥ 2.28 的系统）
+
+```bash
+# 本机：构建 fat jar + 模型 + 配置 + systemd 单元 → dist/pp-ocr4j-cpu.tar.gz
+scripts/package.sh
+
+# 一键部署：上传到服务器并远端执行 install.sh（需 sudo）
+scripts/deploy.sh user@server
+```
+
+### 方式二：Docker（旧系统适用，如 CentOS 7）
+
+```bash
+# 本机：mvn 构建 + docker build（固定 linux/amd64）+ docker save → dist/pp-ocr4j-docker.tar.gz
+scripts/package-docker.sh
+
+# 一键部署：上传镜像包 → docker load → 重建容器（--restart unless-stopped）→ 等待就绪
+scripts/deploy-docker.sh user@server        # 端口可用 PORT=9090 前缀覆盖，默认 8080
+```
+
+镜像内置模型与生产配置（[deploy/Dockerfile](deploy/Dockerfile)），需要改配置时可
+`-v /path/application-prod.yml:/app/config/application-prod.yml` 挂载覆盖，
+JVM 参数用 `-e JAVA_OPTS=...` 覆盖。
+
+服务器端安装到 `/opt/pp-ocr4j`，以系统用户 `ppocr` 运行 systemd 服务 `pp-ocr4j`，
+安装脚本会等待 `/actuator/health/readiness` 就绪后才报成功。生产配置在
+`/opt/pp-ocr4j/config/application-prod.yml`（升级不覆盖），JVM 参数在
+`/opt/pp-ocr4j/pp-ocr4j.env`。生产以 `prod` profile 运行，自动关闭 `/api/ocr/demo`；
+建议部署后配置 `ocr.api-keys` 开启鉴权。
+
+```bash
+# 服务器上常用命令
+systemctl status pp-ocr4j
+journalctl -u pp-ocr4j -f
+```
+
 ## GPU 加速
 
 mica-ppocr 1.1.3 的 `prefer-accelerator` 仍存在缺陷（provider 只记日志、未应用到会话，任何平台

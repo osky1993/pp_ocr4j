@@ -1,0 +1,26 @@
+[Unit]
+Description=pp-ocr4j OCR HTTP service (PP-OCRv6, CPU)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ppocr
+Group=ppocr
+WorkingDirectory=/opt/pp-ocr4j
+ExecStart=/opt/pp-ocr4j/bin/start.sh
+# JVM 收到 SIGTERM 正常退出码为 143
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+# 首次启动含模型预热，给足启动时间
+TimeoutStartSec=180
+
+# 基础加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

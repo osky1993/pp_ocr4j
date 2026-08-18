@@ -1,0 +1,25 @@
+# 生产环境覆盖配置（部署包 config/ 目录，Spring Boot 自动加载，优先级高于 jar 内配置）
+# 只写需要覆盖的项；其余沿用 jar 内 application.yml 的默认值。
+server:
+  port: 8080
+
+ocr:
+  # 模型目录：相对 systemd WorkingDirectory（/opt/pp-ocr4j），也可改为任意绝对路径
+  model-root: models/ppocr-v6
+  accelerator: cpu          # 无 GPU 服务器固定 cpu
+  concurrency: 0            # 0 = CPU 核数；机器还跑其他服务时可调小
+  timeout-ms: 30000
+  warmup-tiers: [tiny]
+  # 生产强烈建议开启鉴权：非空后 /api/** 需携带 X-API-Key 请求头
+  api-keys: []
+  # api-keys:
+  #   - "替换为随机生成的密钥"
+
+mica:
+  ai:
+    ppocr:
+      det-model-path: models/ppocr-v6/tiny/det.onnx
+      rec-model-path: models/ppocr-v6/tiny/rec.onnx
+      rec-char-dict-path: models/ppocr-v6/tiny/dict.txt
+      use-doc-orientation-classify: true
+      doc-orientation-model-path: models/ppocr-v6/doc_ori/doc_ori.onnx
