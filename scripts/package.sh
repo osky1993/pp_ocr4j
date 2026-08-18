@@ -51,5 +51,5 @@ done
 mkdir -p dist
 OUT=dist/pp-ocr4j-cpu.tar.gz
 tar -czf "$OUT" -C "$(dirname "$STAGE")" pp-ocr4j
-echo "==> 完成：$OUT（$(du -h "$OUT" | cut -f1)）"
+echo "==> 完成：${OUT}（$(du -h "$OUT" | cut -f1)）"
 echo "    下一步：scripts/deploy.sh user@server 上传并安装"

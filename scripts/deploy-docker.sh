@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 TARGET=${1:-}
 [[ -n "$TARGET" ]] || { echo "用法：scripts/deploy-docker.sh user@server [--package]" >&2; exit 1; }
 
-PORT=${PORT:-8080}          # 宿主机映射端口，可 PORT=9090 scripts/deploy-docker.sh ... 覆盖
+PORT=${PORT:-10003}          # 宿主机映射端口，可 PORT=9090 scripts/deploy-docker.sh ... 覆盖
 IMAGE=pp-ocr4j:cpu
 NAME=pp-ocr4j
 

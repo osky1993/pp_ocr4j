@@ -25,5 +25,5 @@ mkdir -p dist
 OUT=dist/pp-ocr4j-docker.tar.gz
 echo "==> docker save → $OUT"
 docker save "$IMAGE" | gzip > "$OUT"
-echo "==> 完成：$OUT（$(du -h "$OUT" | cut -f1)）"
+echo "==> 完成：${OUT}（$(du -h "$OUT" | cut -f1)）"
 echo "    下一步：scripts/deploy-docker.sh user@server"
