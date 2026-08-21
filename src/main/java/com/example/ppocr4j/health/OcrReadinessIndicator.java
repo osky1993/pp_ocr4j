@@ -16,10 +16,23 @@ public class OcrReadinessIndicator implements HealthIndicator {
 
     private final OcrEngineManager engineManager;
 
+    /**
+     * 健康指示器构造函数。
+     *
+     * <p>持有引擎管理器，用于动态读取默认档次是否存在（模型未挂载时立即 down）。</p>
+     */
     public OcrReadinessIndicator(OcrEngineManager engineManager) {
         this.engineManager = engineManager;
     }
 
+    /**
+     * readiness 探针逻辑：
+     * <ul>
+     *   <li>若默认档模型文件缺失：down</li>
+     *   <li>若存在：up，并携带当前档次状态明细</li>
+     *   <li>用于 K8s/LB 判断是否放量</li>
+     * </ul>
+     */
     @Override
     public Health health() {
         String defaultTier = engineManager.getDefaultTier();

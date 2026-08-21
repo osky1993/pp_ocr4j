@@ -21,6 +21,20 @@ public enum Accelerator {
     /** NVIDIA CUDA（Linux/Windows，需 -Pgpu profile 切换 onnxruntime_gpu 依赖） */
     CUDA;
 
+    /**
+     * 解析配置里的加速器字符串。
+     *
+     * <p>规则：
+     * <ul>
+     *   <li>空值或空白 -> fallback 到 CPU</li>
+     *   <li>区分大小写，允许 cpu/auto/coreml/cuda</li>
+     *   <li>非法值直接失败（启动即可感知），避免服务以“静默默认”启动后行为不确定</li>
+     * </ul>
+     * </p>
+     *
+     * @param value ocr.accelerator 配置值
+     * @return 标准化后的枚举
+     */
     public static Accelerator parse(String value) {
         if (value == null || value.isBlank()) {
             return CPU;
@@ -32,7 +46,15 @@ public enum Accelerator {
         }
     }
 
-    /** AUTO 按运行环境实际可用的 provider 解析为具体加速器。 */
+    /**
+     * 将 AUTO 映射为当前机器实际可用加速器。
+     *
+     * <p>优先级为 CoreML > CUDA > CPU：同一台机器如果有多个后端可用，优先走性能更佳/开箱体验更好的
+     * CoreML，再次判断 CUDA，最后回退 CPU。</p>
+     *
+     * <p>这个方法不执行实际 ONNX session 创建，真正应用 EP 在 engine 初始化阶段。
+     * 因此可在调用前安全预判可用性，用于日志和启动诊断。</p>
+     */
     public Accelerator resolve() {
         if (this != AUTO) {
             return this;

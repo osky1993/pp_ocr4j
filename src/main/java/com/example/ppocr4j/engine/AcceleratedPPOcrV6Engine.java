@@ -199,6 +199,7 @@ public final class AcceleratedPPOcrV6Engine implements OcrEngine {
 		}
 	}
 
+	/** 关闭单个 ONNX Session，忽略关闭异常（仅用于清理路径）。 */
 	private static void requireFile(String path, String name) {
 		if (path == null) {
 			throw new IllegalArgumentException(name + " is null");
@@ -213,6 +214,7 @@ public final class AcceleratedPPOcrV6Engine implements OcrEngine {
 		closed = true;
 	}
 
+	/** 执行关闭逻辑：释放所有 session，防止 native 资源长期占用。 */
 	@Override
 	public void close() {
 		if (!closed) {
@@ -235,6 +237,7 @@ public final class AcceleratedPPOcrV6Engine implements OcrEngine {
 		}
 	}
 
+	/** 检查关闭状态，避免调用已关闭引擎产生不可预期行为。 */
 	private void requireOpen() {
 		if (closed) {
 			throw new IllegalStateException("AcceleratedPPOcrV6Engine has been closed and can no longer be used.");
@@ -459,6 +462,7 @@ public final class AcceleratedPPOcrV6Engine implements OcrEngine {
 		}
 	}
 
+	/** toLongArray 将 int[] 形状转换为 ONNX API 需要的 long[]。 */
 	private long[] toLongArray(int[] arr) {
 		long[] out = new long[arr.length];
 		for (int i = 0; i < arr.length; i++) {
@@ -467,7 +471,9 @@ public final class AcceleratedPPOcrV6Engine implements OcrEngine {
 		return out;
 	}
 
-	/** 读取 det 模型输出 [1, 1, H, W] → 2D Mat (H, W, CV_32F)。 */
+	/**
+	 * 将 det 模型输出张量转为 OpenCV Mat，便于 DB 后处理读取文本概率图。
+	 */
 	private Mat readProbToMat(OnnxTensor tensor) throws OrtException {
 		FloatBuffer buf = tensor.getFloatBuffer();
 		long[] shape = tensor.getInfo().getShape();

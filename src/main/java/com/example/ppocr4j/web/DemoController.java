@@ -21,6 +21,9 @@ public class DemoController {
     private final OcrService ocrService;
     private final OcrEngineManager engineManager;
 
+    /**
+     * 注入识别服务用于实际计算，注入引擎管理器用于 tier 归一化展示（和正式接口一致）。
+     */
     public DemoController(OcrService ocrService, OcrEngineManager engineManager) {
         this.ocrService = ocrService;
         this.engineManager = engineManager;

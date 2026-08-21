@@ -23,11 +23,24 @@ public class OcrWarmupRunner implements ApplicationRunner {
     private final OcrEngineManager engineManager;
     private final OcrProperties props;
 
+    /**
+     * 预热任务构造函数。将 `engineManager` 与配置注入到启动 runner，便于启动期 fail-fast。
+     */
     public OcrWarmupRunner(OcrEngineManager engineManager, OcrProperties props) {
         this.engineManager = engineManager;
         this.props = props;
     }
 
+    /**
+     * 启动期执行预热：
+     * <ul>
+     *   <li>校验每个 warmup tier 的模型文件是否存在</li>
+     *   <li>各跑一张空白图触发 det/rec 路径，提前加载算子和模型</li>
+     *   <li>记录每档耗时，便于部署后确认是否异常慢</li>
+     * </ul>
+     *
+     * <p>异常会抛出并阻断应用启动（默认 fail-fast）。</p>
+     */
     @Override
     public void run(ApplicationArguments args) {
         for (String tier : props.getWarmupTiers()) {

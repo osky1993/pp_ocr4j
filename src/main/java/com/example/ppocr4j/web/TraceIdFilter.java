@@ -27,7 +27,13 @@ public class TraceIdFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Request-Id";
 
     /**
-     * 生成并透传 traceId：优先使用请求头，空则新建 16 位短 UUID，写入 MDC 与响应头。
+     * filter 处理入口：
+     * <ul>
+     *   <li>优先读取请求头 X-Request-Id</li>
+     *   <li>不存在则生成短 traceId（便于本地联调）</li>
+     *   <li>写入 MDC + 响应头，保证日志链路和下游可见</li>
+     *   <li>请求结束后清理 MDC，避免线程复用污染</li>
+     * </ul>
      */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,

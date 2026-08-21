@@ -29,15 +29,23 @@ public enum ErrorCode {
     private final int code;
     private final HttpStatus httpStatus;
 
+    /**
+     * 错误码定义构造。
+     *
+     * @param code      对外固定 code，需兼容历史客户端
+     * @param httpStatus HTTP 语义状态码
+     */
     ErrorCode(int code, HttpStatus httpStatus) {
         this.code = code;
         this.httpStatus = httpStatus;
     }
 
+    /** 对应对外返回码。 */
     public int code() {
         return code;
     }
 
+    /** 对应 HTTP 状态码，用于统一响应头与网关策略。 */
     public HttpStatus httpStatus() {
         return httpStatus;
     }

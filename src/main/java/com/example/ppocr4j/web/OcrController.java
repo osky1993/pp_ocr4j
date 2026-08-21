@@ -17,6 +17,9 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 同步识别入口：模型档次管理、识别、base64 入口、组件信息。
+ */
 @RestController
 public class OcrController {
 
@@ -24,6 +27,11 @@ public class OcrController {
     private final OcrEngineManager engineManager;
     private final ObjectProvider<BuildProperties> buildProperties;
 
+    /**
+     * 注入识别服务、引擎管理器和构建信息。
+     *
+     * <p>BuildProperties 是可选 bean，用于输出服务版本与构建元信息；本地开发时为空也不影响接口可用。</p>
+     */
     public OcrController(OcrService ocrService, OcrEngineManager engineManager,
                          ObjectProvider<BuildProperties> buildProperties) {
         this.ocrService = ocrService;
@@ -112,12 +120,9 @@ public class OcrController {
     }
 
     /**
-     * 统一将 tier 参数转为可落库/落日志的标准值。
+     * 统一归一化 tier 参数：空值回退默认档，非空转小写。
      *
-     * <p>说明：空值回退到默认档，非空值统一转小写，保证前端和后端一致性。</p>
-     *
-     * @param tier 外部输入 tier（可能为空）
-     * @return 实际生效档次
+     * <p>目的：对齐数据库记录、日志标签、返回值中的档次字段，避免“SMALL”和“small”被当成两个指标维度。</p>
      */
     private String resolvedTier(String tier) {
         return (tier == null || tier.isBlank()) ? engineManager.getDefaultTier() : tier.toLowerCase();

@@ -38,11 +38,23 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     private final OcrProperties props;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 注入配置与序列化器。ObjectMapper 用于返回 401 时直接写 JSON，避免默认错误页。
+     */
     public ApiKeyFilter(OcrProperties props, ObjectMapper objectMapper) {
         this.props = props;
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 鉴权过滤主流程：
+     * <ul>
+     *   <li>无配置时放行，不做鉴权</li>
+     *   <li>配置非空时，只拦 `/api/**`</li>
+     *   <li>缺失/不匹配 Key 则返回 4010，不进入 controller</li>
+     *   <li>记录 caller 到 MDC，便于日志聚合按调用方归因</li>
+     * </ul>
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {

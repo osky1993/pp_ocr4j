@@ -32,7 +32,18 @@ public class OcrTaskManager {
 
     public enum Status { RUNNING, DONE, FAILED }
 
-        /** 任务记录：终态字段由工作线程写、查询线程读，全部 volatile。 */
+    /**
+     * 内存态任务记录。
+     *
+     * <p>状态机：
+     * <ul>
+     *   <li>提交：RUNNING，先入内存</li>
+     *   <li>完成：DONE/FAILED，回填 result/error 字段</li>
+     *   <li>到期：由定时任务清理</li>
+     * </ul>
+     * </p>
+     * <p>字段使用 volatile，避免查询线程读到旧值。</p>
+     */
         public static class TaskRecord {
             private final String taskId;
             private final Instant createdAt;
@@ -145,7 +156,9 @@ public class OcrTaskManager {
         return record.toView();
     }
 
-    /** 定时清理超过 TTL 的任务（含异常悬挂的未完成任务，防泄漏）。 */
+    /**
+     * 每分钟清理一次过期任务（含异常悬挂任务），防泄漏。
+     */
     @Scheduled(fixedDelay = 60_000)
     public void evictExpired() {
         Instant deadline = Instant.now().minusSeconds(props.getTask().getTtlMinutes() * 60);

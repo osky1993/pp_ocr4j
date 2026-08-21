@@ -6,9 +6,17 @@ import java.util.Base64;
 
 /**
  * base64 图片识别请求体（同步接口与异步任务接口共用）。
- * image 支持裸 base64 或 data URL（data:image/png;base64,...）。
+ *
+ * <p>字段说明：
+ * <ul>
+ *   <li>image：图片 base64，支持裸串与 data URL</li>
+ *   <li>tier：模型档次（可选）</li>
+ *   <li>rotate：手动旋转角度（可选）</li>
+ *   <li>autoRotate：是否开启四方向自动试探</li>
+ * </ul>
+ * </p>
  */
-    public record Base64Request(String image, String tier, Integer rotate, Boolean autoRotate) {
+public record Base64Request(String image, String tier, Integer rotate, Boolean autoRotate) {
 
     /**
      * 校验并解码 image 字段。

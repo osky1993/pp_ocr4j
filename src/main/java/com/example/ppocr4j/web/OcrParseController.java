@@ -27,6 +27,11 @@ public class OcrParseController {
     private final OcrParseService parseService;
     private final OcrEngineManager engineManager;
 
+    /**
+     * 注入结构化识别服务与引擎管理器。
+     *
+     * <p>结构化流程与普通 OCR 共用参数语义，主要区别在于结果组装为字段级 Map。</p>
+     */
     public OcrParseController(OcrParseService parseService, OcrEngineManager engineManager) {
         this.parseService = parseService;
         this.engineManager = engineManager;
@@ -70,6 +75,7 @@ public class OcrParseController {
                 System.currentTimeMillis() - start));
     }
 
+    /** 统一归一化 tier（空值回退默认档，非空转小写）供响应回填。 */
     private String resolvedTier(String tier) {
         return (tier == null || tier.isBlank()) ? engineManager.getDefaultTier() : tier.toLowerCase();
     }

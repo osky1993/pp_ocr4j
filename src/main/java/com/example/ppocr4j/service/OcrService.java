@@ -40,6 +40,17 @@ public class OcrService {
     private final OcrProperties props;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
+    /**
+     * 识别服务构造函数。
+     *
+     * <p>每个组件职责：
+     * <ul>
+     *   <li>engineManager：按 tier 选择引擎并执行核心 run</li>
+     *   <li>executor：统一并发闸门与同步超时控制</li>
+     *   <li>props：像素上限、超时等配置参数</li>
+     *   <li>meterRegistry：识别成功/拒绝/错误计数与耗时指标上报</li>
+     * </ul></p>
+     */
     public OcrService(OcrEngineManager engineManager, OcrExecutor executor, OcrProperties props,
                       io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.engineManager = engineManager;
@@ -247,6 +258,7 @@ public class OcrService {
         }
     }
 
+    /** 把图片 bytes 通过 OpenCV 解码成 BGR Mat；成功后由调用方释放。 */
     private Mat decodeBytes(byte[] imageBytes) {
         // MatOfByte 只做临时封装，真正数据放在返回的 Mat 中
         Mat image = Imgcodecs.imdecode(new MatOfByte(imageBytes), Imgcodecs.IMREAD_COLOR);
@@ -256,6 +268,7 @@ public class OcrService {
         return image;
     }
 
+    /** 按行列乘积做像素上限校验，避免大图解码后触发 OOM。 */
     private void checkPixels(Mat image) {
         long pixels = (long) image.rows() * image.cols();
         if (pixels > props.getMaxPixels()) {

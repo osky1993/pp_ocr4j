@@ -58,6 +58,18 @@ public class OcrEngineManager implements DisposableBean {
     /** 生效的加速器（启动期解析一次并落日志）。 */
     private final Accelerator accelerator;
 
+    /**
+     * 组装引擎管理器。
+     *
+     * <p>职责分解：
+     * <ul>
+     *   <li>读取 starter 的默认模型路径，推断默认档次。</li>
+     *   <li>读取全局加速策略（CPU / AUTO / COREML / CUDA）。</li>
+     *   <li>如果启动为 CPU，默认档位引擎复用 Starter 实例并缓存；其余模式按档位延迟创建。</li>
+     *   <li>失败路径下，非法 tier 与模型缺失会在调用 `getEngine` 时快速返回统一错误码。</li>
+     * </ul>
+     * </p>
+     */
     public OcrEngineManager(PPOcrV6Engine defaultEngine, PPOcrV6Config config, OcrProperties props) {
         this.baseConfig = config;
         this.modelRoot = Path.of(props.getModelRoot());
@@ -81,6 +93,7 @@ public class OcrEngineManager implements DisposableBean {
         return defaultTier;
     }
 
+    /** 当前实例启动后生效的加速策略（CPU / AUTO / COREML / CUDA）。 */
     public Accelerator getAccelerator() {
         return accelerator;
     }
@@ -176,6 +189,9 @@ public class OcrEngineManager implements DisposableBean {
         });
     }
 
+    /**
+     * 应用关闭时释放所有非托管引擎，清空运行时缓存。
+     */
     @Override
     public void destroy() {
         // adapter 对 Starter 引擎的 close 为 no-op（由 Spring 管理），其余实例真实释放
@@ -192,12 +208,17 @@ public class OcrEngineManager implements DisposableBean {
      */
     private record LibraryEngineAdapter(PPOcrV6Engine delegate, boolean managedExternally) implements OcrEngine {
 
+        /**
+         * 委托执行。保持与本项目自研加速引擎一致的 run 语义，不在这里做状态变更。
+         * managedExternally=true 时不在本类调用 close，避免与 Spring 生命周期重复关闭。
+         */
         @Override
         public List<PPOcrV6Result> run(Mat imgBgr) {
             // 1.1.x 起 Mat 入参重命名为 runMat（Mat 生命周期由调用方管理，与本项目约定一致）
             return delegate.runMat(imgBgr);
         }
 
+        /** 关闭该适配器持有的引擎（若托管给 Spring 则跳过）。 */
         @Override
         public void close() {
             if (!managedExternally) {

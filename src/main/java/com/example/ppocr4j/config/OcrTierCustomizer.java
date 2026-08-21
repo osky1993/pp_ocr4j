@@ -4,11 +4,6 @@ import net.dreamlu.mica.ai.ppocr.autoconfigure.PPOCRPropertiesCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * PPOCRPropertiesCustomizer SPI 示例：在 application.yml 之外做旁路覆盖。
- * 通过环境变量 PPOCR_TIER=tiny|small|medium 切换模型档次，
- * 同样的思路也适用于从配置中心（如 Nacos）动态下发模型路径。
- */
 @Configuration(proxyBeanMethods = false)
 public class OcrTierCustomizer {
 
@@ -18,6 +13,18 @@ public class OcrTierCustomizer {
      * <p>注意：这是启动期一次性自定义，不会在运行中监听环境变量变化。</p>
      *
      * <p>示例：{@code PPOCR_TIER=small}</p>
+     */
+    /**
+     * 覆盖 Starter 注入的 det/rec 模型路径，支持部署时只改环境变量完成档次切换。
+     *
+     * <p>流程：
+     * <ul>
+     *   <li>启动期读取 PPOCR_TIER</li>
+     *   <li>若命中 tiny/small/medium，按固定目录覆盖 three paths</li>
+     *   <li>若为空，不做任何变更，沿用 application.yml</li>
+     * </ul></p>
+     *
+     * <p>注意：该 bean 在上下文初始化阶段执行一次。热切换请走动态配置中心并重启实例。</p>
      */
     @Bean
     PPOCRPropertiesCustomizer tierEnvCustomizer() {

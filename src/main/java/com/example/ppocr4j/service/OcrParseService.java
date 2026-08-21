@@ -37,6 +37,16 @@ public class OcrParseService {
     private final OcrService ocrService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 结构化服务构造函数。
+     *
+     * <p>说明：
+     * <ul>
+     *   <li>把支持的证件类型与解析器函数装配到固定有序 Map（接口返回顺序可控）</li>
+     *   <li>同时生成一份规范化索引（去掉 -/_）用于兼容不同 docType 写法</li>
+     * </ul>
+     * </p>
+     */
     public OcrParseService(OcrService ocrService, ObjectMapper objectMapper,
                            VehicleLicenseParser vehicleLicenseParser,
                            IdCardParser idCardParser,

@@ -22,6 +22,9 @@ public class OcrTaskController {
 
     private final OcrTaskManager taskManager;
 
+    /**
+     * 只需依赖任务管理器。Controller 不持有图片解码与超时逻辑，核心行为由 taskManager 统一承接。
+     */
     public OcrTaskController(OcrTaskManager taskManager) {
         this.taskManager = taskManager;
     }

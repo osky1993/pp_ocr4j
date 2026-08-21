@@ -40,11 +40,10 @@ public class OcrExecutor implements DisposableBean {
     private final int concurrency;
 
     /**
-     * 初始化并发闸门。
+     * 并发闸门与线程池构造。
      *
-     * <p>concurrency 为 0 时按 CPU 核数兜底；线程名使用 ocr-worker-* 便于线上抓取火焰图。</p>
-     *
-     * @param props 组件配置
+     * <p>线程池大小取决于 `ocr.concurrency`（0 则按 CPU 核数），
+     * 采用有界信号量实现“拿不到就立即拒绝”，防止请求排队导致雪崩。</p>
      */
     public OcrExecutor(OcrProperties props) {
         this.concurrency = props.effectiveConcurrency();
