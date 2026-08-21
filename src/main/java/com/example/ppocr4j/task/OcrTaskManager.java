@@ -75,6 +75,12 @@ public class OcrTaskManager {
     private final OcrService ocrService;
     private final OcrProperties props;
 
+    /**
+     * 构造任务管理器。
+     *
+     * <p>依赖注入的 {@code OcrService} 提供异步识别能力，{@code OcrProperties}
+     * 提供 TTL 与并发参数（TTL 用于过期清理）。</p>
+     */
     public OcrTaskManager(OcrService ocrService, OcrProperties props) {
         this.ocrService = ocrService;
         this.props = props;
@@ -100,6 +106,14 @@ public class OcrTaskManager {
         return taskId;
     }
 
+    /**
+     * 异步执行结束回调：将成功结果或异常信息写回内存记录。
+     *
+     * <ul>
+     *   <li>成功：记录 OcrResponse 与完成时间、状态 DONE。</li>
+     *   <li>失败：区分 OcrException 与未知异常，统一转码并附带错误信息，状态 FAILED。</li>
+     * </ul>
+     */
     private void complete(TaskRecord record, String source, String tier,
                           OcrService.TimedResults results, Throwable error) {
         record.finishedAt = Instant.now();
@@ -118,7 +132,11 @@ public class OcrTaskManager {
         }
     }
 
-    /** 查询任务；不存在或已过期清理 → 1001。 */
+    /**
+     * 查询任务。
+     *
+     * <p>可能返回 RUNNING/DONE/FAILED；查询到不存在/已清理任务一律按 INVALID_PARAM 报 1001。</p>
+     */
     public Map<String, Object> get(String taskId) {
         TaskRecord record = tasks.get(taskId);
         if (record == null) {
