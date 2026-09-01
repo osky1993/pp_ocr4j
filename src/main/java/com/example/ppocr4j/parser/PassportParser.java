@@ -1,5 +1,11 @@
 package com.example.ppocr4j.parser;
 
+import com.example.ppocr4j.parser.mrz.MrzCheck;
+import com.example.ppocr4j.parser.mrz.MrzDates;
+import com.example.ppocr4j.parser.mrz.MrzDocument;
+import com.example.ppocr4j.parser.mrz.MrzFormat;
+import com.example.ppocr4j.parser.mrz.MrzLocator;
+import com.example.ppocr4j.parser.mrz.MrzText;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Result;
 import net.dreamlu.mica.ai.ppocr.structured.parser.core.BaseStructuredParser;
 import net.dreamlu.mica.ai.ppocr.structured.parser.core.LabelMatcher;
@@ -7,9 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.time.Year;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -56,20 +60,12 @@ public class PassportParser extends BaseStructuredParser<PassportResult> {
 
     private static final Logger log = LoggerFactory.getLogger(PassportParser.class);
 
-    /** MRZ TD3 单行标准长度。 */
-    private static final int MRZ_LINE_LEN = 44;
-    /** MRZ 合法字符集：大写字母、数字、填充符。 */
-    private static final Pattern MRZ_CHARSET = Pattern.compile("[A-Z0-9<]+");
-    /**
-     * MRZ 第二行结构（宽松版）：护照号(9) + 校验位 + 国籍(3) + 生日(6) + 校验位
-     * + 性别 + 有效期(6) + 校验位，共 28 位；其后的个人号区允许缺失（OCR 截断）。
-     */
-    private static final Pattern MRZ_LINE2 = Pattern.compile(
-            "^[A-Z0-9<]{9}[0-9<][A-Z<]{3}[0-9<]{6}[0-9<][MFX<][0-9<]{6}[0-9<].*$");
-    /** MRZ 第一行结构：P + 次类型 + 签发国(3) + 姓名区。 */
-    private static final Pattern MRZ_LINE1 = Pattern.compile("^P[A-Z<][A-Z<]{3}[A-Z<]+$");
-    /** MRZ 日期：YYMMDD。 */
-    private static final Pattern MRZ_DATE = Pattern.compile("\\d{6}");
+    /** 日志前缀：MRZ 组件是共享的，靠这个区分是哪种证件在报错。 */
+    private static final String LOG_PREFIX = "护照解析";
+    /** TD3 姓名行下标（第 1 行，含证件类型/签发国/姓名区）。 */
+    private static final int LINE_NAME = 0;
+    /** TD3 数据行下标（第 2 行，含证件号/日期/性别与全部校验位）。 */
+    private static final int LINE_DATA = 1;
 
     /**
      * 可视区日期：{@code 27 3月/MAR 2014}（中国护照）或 {@code 09 MAA/MAR 2014}（荷兰护照）。
@@ -119,266 +115,85 @@ public class PassportParser extends BaseStructuredParser<PassportResult> {
         if (results.isEmpty()) {
             return r;
         }
-        // 1) MRZ 优先：定长解析 + 校验位自验
-        MrzLines mrz = findMrz(results);
-        if (mrz.line2 != null) {
-            parseLine2(mrz, r);
-        }
-        if (mrz.line1 != null) {
-            parseLine1(mrz, r);
+        // 1) MRZ 优先：定长解析 + 校验位自验。
+        //    只允许 TD3——护照的版式是已知的，放开自动检测只会引入误判风险。
+        MrzDocument mrz = MrzLocator.locate(results, MrzFormat.TD3);
+        if (mrz != null) {
+            if (mrz.line(LINE_DATA) != null) {
+                parseDataLine(mrz, r);
+            }
+            if (mrz.line(LINE_NAME) != null) {
+                parseNameLine(mrz, r);
+            }
         }
         // 2) 可视区兜底：补 MRZ 没有的字段，并在 MRZ 缺失时顶上
         parseViz(results, r);
-        if (mrz.line1 == null && mrz.line2 == null) {
+        if (mrz == null || !mrz.hasAnyLine()) {
             log.warn("护照解析：未定位到 MRZ 机读区，全部字段退化为可视区标签定位");
         }
         return r;
     }
 
     // ==================================================================
-    // MRZ 定位
+    // MRZ 字段映射
+    //
+    // 定位、校验位、日期解析都在 parser.mrz 包里按版式数据表驱动；
+    // 这里只做「MRZ 规范字段名 → 护照业务字段名」的映射与 box 回填。
     // ==================================================================
 
     /**
-     * MRZ 两行的文本与来源框。
+     * 解析 MRZ 数据行（TD3 第 2 行）：护照号、国籍、出生日期、性别、有效期、个人号，
+     * 并校验 5 个校验位。
      *
-     * @param line1     第一行清洗后文本；未找到为 null
-     * @param line2     第二行清洗后文本；未找到为 null
-     * @param line1Boxes 第一行来源 OCR 框（可能多段拼接）
-     * @param line2Boxes 第二行来源 OCR 框
+     * <p>行长不足（OCR 截断）时按已有前缀尽力解析，缺失段留 null，{@code mrzValid} 置 false。
      */
-    private record MrzLines(String line1, String line2,
-                            List<PPOcrV6Result> line1Boxes, List<PPOcrV6Result> line2Boxes) {
-        static MrzLines empty() {
-            return new MrzLines(null, null, List.of(), List.of());
-        }
-    }
+    private void parseDataLine(MrzDocument mrz, PassportResult r) {
+        r.setMrzLine2(mrz.line(LINE_DATA));
+        applyBoxes(r, "mrzLine2", mrz.boxes(LINE_DATA));
 
-    /** 一行 MRZ 候选：按 y 聚类后拼接的文本 + 组成它的框。 */
-    private record MrzRow(String text, List<PPOcrV6Result> boxes, int centerY) {}
-
-    /**
-     * 在 OCR 结果中定位 MRZ 两行。
-     *
-     * <p>步骤：筛出 MRZ 风格候选框（清洗后只含 {@code [A-Z0-9<]} 且含填充符 {@code <}，
-     * 正常版面文字几乎不可能满足）→ 按 y 聚类成行 → 行内按 x 拼接 →
-     * 用结构正则挑出第二行（信息密度最高）与第一行（{@code P} 开头且在第二行上方）。
-     */
-    private static MrzLines findMrz(List<PPOcrV6Result> results) {
-        List<PPOcrV6Result> candidates = new ArrayList<>();
-        for (PPOcrV6Result r : results) {
-            String t = clean(r.text());
-            // 含 < 是 MRZ 的强特征：可视区正常文本不会出现填充符
-            if (!t.isEmpty() && t.indexOf('<') >= 0 && MRZ_CHARSET.matcher(t).matches()) {
-                candidates.add(r);
-            }
-        }
-        if (candidates.isEmpty()) {
-            return MrzLines.empty();
-        }
-        List<MrzRow> rows = groupIntoRows(candidates);
-
-        // 第二行：优先取结构完整（匹配 TD3 正则）且最长的一行
-        MrzRow line2 = rows.stream()
-                .filter(row -> MRZ_LINE2.matcher(row.text()).matches())
-                .max(Comparator.comparingInt(row -> row.text().length()))
-                .orElse(null);
-        // 第一行：P 开头、结构匹配，且必须在第二行上方（y 更小）
-        final int line2Y = line2 == null ? Integer.MAX_VALUE : line2.centerY();
-        MrzRow line1 = rows.stream()
-                .filter(row -> row != line2)
-                .filter(row -> row.centerY() < line2Y)
-                .filter(row -> MRZ_LINE1.matcher(row.text()).matches())
-                .max(Comparator.comparingInt(row -> row.text().length()))
-                .orElse(null);
-
-        return new MrzLines(
-                line1 == null ? null : line1.text(),
-                line2 == null ? null : line2.text(),
-                line1 == null ? List.of() : line1.boxes(),
-                line2 == null ? List.of() : line2.boxes());
-    }
-
-    /**
-     * 把候选框按 y 聚类成行，行内按 x 升序拼接。
-     *
-     * <p>处理 OCR 把一行 MRZ 切成多段的场景（真实样图上尾部填充符 {@code <<<}
-     * 就被单独切成一个框）。同行判定：两框 y 中心差小于两者平均高度的一半。
-     */
-    private static List<MrzRow> groupIntoRows(List<PPOcrV6Result> candidates) {
-        List<PPOcrV6Result> sorted = new ArrayList<>(candidates);
-        sorted.sort(Comparator.comparingInt(PassportParser::centerY));
-
-        List<List<PPOcrV6Result>> groups = new ArrayList<>();
-        for (PPOcrV6Result r : sorted) {
-            List<PPOcrV6Result> target = null;
-            for (List<PPOcrV6Result> g : groups) {
-                PPOcrV6Result head = g.get(0);
-                int tolerance = (height(head) + height(r)) / 4;
-                if (Math.abs(centerY(head) - centerY(r)) <= Math.max(tolerance, 1)) {
-                    target = g;
-                    break;
-                }
-            }
-            if (target == null) {
-                target = new ArrayList<>();
-                groups.add(target);
-            }
-            target.add(r);
-        }
-
-        List<MrzRow> rows = new ArrayList<>(groups.size());
-        for (List<PPOcrV6Result> g : groups) {
-            g.sort(Comparator.comparingInt(LabelMatcher::minX));
-            StringBuilder sb = new StringBuilder();
-            int ySum = 0;
-            for (PPOcrV6Result r : g) {
-                sb.append(clean(r.text()));
-                ySum += centerY(r);
-            }
-            rows.add(new MrzRow(sb.toString(), g, ySum / g.size()));
-        }
-        return rows;
-    }
-
-    /**
-     * MRZ 文本清洗：去空格、统一大写、把常见的 OCR 误识别字符还原为填充符。
-     *
-     * <p>只做保守替换（书名号/全角尖括号 → {@code <}），不做 O↔0、I↔1 这类
-     * 高风险猜测——那会把校验位算错，反而掩盖了识别质量问题。
-     */
-    private static String clean(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        return raw.toUpperCase(Locale.ROOT)
-                .replace("«", "<<")
-                .replace("‹", "<")
-                .replace("＜", "<")
-                .replaceAll("[\\s\\u00a0]", "");
-    }
-
-    // ==================================================================
-    // MRZ 解析
-    // ==================================================================
-
-    /**
-     * 解析 MRZ 第二行：护照号、国籍、出生日期、性别、有效期、个人号，并校验 5 个校验位。
-     *
-     * <p>长度不足 44（OCR 截断）时按已有前缀尽力解析，缺失段留 null，
-     * 并把 {@code mrzValid} 置 false。
-     */
-    private void parseLine2(MrzLines mrz, PassportResult r) {
-        String l2 = mrz.line2();
-        r.setMrzLine2(l2);
-        applyBoxes(r, "mrzLine2", mrz.line2Boxes());
-
-        r.setPassportNo(strip(sub(l2, 0, 9)));
-        r.setNationality(strip(sub(l2, 10, 13)));
-        r.setBirthDate(mrzDate(sub(l2, 13, 19), true));
-        String sex = sub(l2, 20, 21);
+        r.setPassportNo(MrzText.strip(mrz.field("documentNumber")));
+        r.setNationality(MrzText.strip(mrz.field("nationality")));
+        r.setBirthDate(MrzDates.parse(mrz.field("birthDate"), true, LOG_PREFIX));
+        String sex = mrz.field("sex");
         r.setSex(sex == null || "<".equals(sex) ? null : sex);
-        r.setExpiryDate(mrzDate(sub(l2, 21, 27), false));
-        r.setPersonalNumber(strip(sub(l2, 28, 42)));
+        r.setExpiryDate(MrzDates.parse(mrz.field("expiryDate"), false, LOG_PREFIX));
+        r.setPersonalNumber(MrzText.strip(mrz.field("optionalData")));
 
-        // 护照号/国籍/日期等字段来自第二行，box 指向同一批框，便于前端整体高亮
+        // 这些字段都来自数据行，box 指向同一批框，便于前端整体高亮
         for (String field : List.of("passportNo", "nationality", "birthDate", "sex", "expiryDate", "personalNumber")) {
-            applyBoxes(r, field, mrz.line2Boxes());
+            applyBoxes(r, field, mrz.boxes(LINE_DATA));
         }
 
-        r.setMrzValid(validate(l2));
+        r.setMrzValid(MrzCheck.validateAll(mrz, LOG_PREFIX));
     }
 
     /**
-     * 校验 MRZ 第二行的 5 个校验位（护照号 / 出生日期 / 有效期 / 个人号 / 综合）。
-     *
-     * @return 全部通过返回 true；长度不足或任一位不匹配返回 false
-     */
-    private static boolean validate(String l2) {
-        if (l2.length() < MRZ_LINE_LEN) {
-            log.warn("护照解析：MRZ 第二行长度 {} < {}，跳过校验位验证", l2.length(), MRZ_LINE_LEN);
-            return false;
-        }
-        boolean ok = checkDigit(l2.substring(0, 9), l2.charAt(9), "护照号")
-                & checkDigit(l2.substring(13, 19), l2.charAt(19), "出生日期")
-                & checkDigit(l2.substring(21, 27), l2.charAt(27), "有效期")
-                & checkDigit(l2.substring(28, 42), l2.charAt(42), "个人号")
-                & checkDigit(l2.substring(0, 10) + l2.substring(13, 20) + l2.substring(21, 43),
-                             l2.charAt(43), "综合");
-        if (ok) {
-            log.debug("护照解析：MRZ 校验位全部通过");
-        }
-        return ok;
-    }
-
-    /**
-     * 单个校验位比对。
-     *
-     * @param data     被校验的数据段
-     * @param expected MRZ 中印刷的校验位字符
-     * @param name     字段名（日志用）
-     * @return 匹配返回 true
-     */
-    private static boolean checkDigit(String data, char expected, String name) {
-        int actual = computeCheckDigit(data);
-        if (expected == '<' || !Character.isDigit(expected) || actual != expected - '0') {
-            log.warn("护照解析：MRZ {} 校验位不匹配（印刷 '{}'，算得 {}），字段仍返回但需人工复核",
-                    name, expected, actual);
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * ICAO 9303 校验位算法：字符权值（数字取本身，A-Z 取 10~35，{@code <} 取 0）
-     * 按 7-3-1 循环加权求和后取模 10。
-     */
-    private static int computeCheckDigit(String data) {
-        int[] weights = {7, 3, 1};
-        int sum = 0;
-        for (int i = 0; i < data.length(); i++) {
-            char c = data.charAt(i);
-            int v;
-            if (c == '<') {
-                v = 0;
-            } else if (c >= '0' && c <= '9') {
-                v = c - '0';
-            } else if (c >= 'A' && c <= 'Z') {
-                v = c - 'A' + 10;
-            } else {
-                v = 0;
-            }
-            sum += v * weights[i % 3];
-        }
-        return sum % 10;
-    }
-
-    /**
-     * 解析 MRZ 第一行：证件类型、签发国、姓名区。
+     * 解析 MRZ 姓名行（TD3 第 1 行）：证件类型、签发国、姓名区。
      *
      * <p>姓名区规则见 {@link PassportResult#getSurname()}——{@code <<} 缺失时
      * 只填 {@code nameEn}，不猜姓/名边界。
      */
-    private void parseLine1(MrzLines mrz, PassportResult r) {
-        String l1 = mrz.line1();
-        r.setMrzLine1(l1);
-        applyBoxes(r, "mrzLine1", mrz.line1Boxes());
+    private void parseNameLine(MrzDocument mrz, PassportResult r) {
+        r.setMrzLine1(mrz.line(LINE_NAME));
+        applyBoxes(r, "mrzLine1", mrz.boxes(LINE_NAME));
 
-        r.setDocumentType(strip(sub(l1, 0, 1)));
-        r.setIssuingCountry(strip(sub(l1, 2, 5)));
-        applyBoxes(r, "documentType", mrz.line1Boxes());
-        applyBoxes(r, "issuingCountry", mrz.line1Boxes());
+        r.setDocumentType(MrzText.strip(mrz.field("documentType")));
+        r.setIssuingCountry(MrzText.strip(mrz.field("issuingState")));
+        applyBoxes(r, "documentType", mrz.boxes(LINE_NAME));
+        applyBoxes(r, "issuingCountry", mrz.boxes(LINE_NAME));
 
-        if (l1.length() <= 5) {
+        String line = mrz.line(LINE_NAME);
+        int nameFrom = MrzFormat.TD3.field("names").from();
+        if (line.length() <= nameFrom) {
             return;
         }
         // 去掉尾部填充符后的姓名区
-        String names = l1.substring(5).replaceAll("<+$", "");
+        String names = line.substring(nameFrom).replaceAll("<+$", "");
         if (names.isEmpty()) {
             return;
         }
-        r.setNameEn(names.replaceAll("<+", " ").trim());
-        applyBoxes(r, "nameEn", mrz.line1Boxes());
+        r.setNameEn(MrzText.namesToSpaced(names));
+        applyBoxes(r, "nameEn", mrz.boxes(LINE_NAME));
 
         int sep = names.indexOf("<<");
         if (sep < 0) {
@@ -386,42 +201,12 @@ public class PassportParser extends BaseStructuredParser<PassportResult> {
                     + "姓/名不做切分以免猜错，请使用 nameEn 或可视区字段", names);
             return;
         }
-        String surname = names.substring(0, sep).replaceAll("<+", " ").trim();
-        String given = names.substring(sep + 2).replaceAll("<+", " ").trim();
+        String surname = MrzText.namesToSpaced(names.substring(0, sep));
+        String given = MrzText.namesToSpaced(names.substring(sep + 2));
         r.setSurname(surname.isEmpty() ? null : surname);
         r.setGivenNames(given.isEmpty() ? null : given);
-        applyBoxes(r, "surname", mrz.line1Boxes());
-        applyBoxes(r, "givenNames", mrz.line1Boxes());
-    }
-
-    /**
-     * MRZ 日期 YYMMDD → {@code yyyy-MM-dd}。
-     *
-     * <p>两位年份的世纪推断：
-     * <ul>
-     *   <li>出生日期不可能在未来 → {@code 20YY} 超过今年则取 {@code 19YY}；</li>
-     *   <li>有效期一律取 {@code 20YY}（MRZ 护照 1980 年代才出现，2000 年前的早已失效）。</li>
-     * </ul>
-     *
-     * @param yymmdd MRZ 原文 6 位；null 或格式非法返回 null
-     * @param birth  true=出生日期，false=有效期
-     */
-    private static String mrzDate(String yymmdd, boolean birth) {
-        if (yymmdd == null || !MRZ_DATE.matcher(yymmdd).matches()) {
-            return null;
-        }
-        int yy = Integer.parseInt(yymmdd.substring(0, 2));
-        int mm = Integer.parseInt(yymmdd.substring(2, 4));
-        int dd = Integer.parseInt(yymmdd.substring(4, 6));
-        if (mm < 1 || mm > 12 || dd < 1 || dd > 31) {
-            log.warn("护照解析：MRZ 日期 \"{}\" 月/日越界，置 null", yymmdd);
-            return null;
-        }
-        int year = 2000 + yy;
-        if (birth && year > Year.now().getValue()) {
-            year = 1900 + yy;
-        }
-        return String.format("%04d-%02d-%02d", year, mm, dd);
+        applyBoxes(r, "surname", mrz.boxes(LINE_NAME));
+        applyBoxes(r, "givenNames", mrz.boxes(LINE_NAME));
     }
 
     // ==================================================================
@@ -662,27 +447,9 @@ public class PassportParser extends BaseStructuredParser<PassportResult> {
     // 小工具
     // ==================================================================
 
-    /** 安全子串：越界返回 null，供定长 MRZ 解析在 OCR 截断时降级。 */
-    private static String sub(String s, int from, int to) {
-        return (s == null || s.length() < to) ? null : s.substring(from, to);
-    }
-
-    /** 去掉 MRZ 填充符；结果为空返回 null。 */
-    private static String strip(String s) {
-        if (s == null) {
-            return null;
-        }
-        String t = s.replace("<", "").trim();
-        return t.isEmpty() ? null : t;
-    }
-
     /** 把一批来源框登记到结果的 fieldBoxes（供前端高亮）。 */
     private static void applyBoxes(PassportResult r, String field, List<PPOcrV6Result> boxes) {
         LabelMatcher.applyFieldBox(r, field, LabelMatcher.LabeledMatch.of("", boxes));
-    }
-
-    private static int centerY(PPOcrV6Result r) {
-        return (LabelMatcher.minY(r) + LabelMatcher.maxY(r)) / 2;
     }
 
     private static int height(PPOcrV6Result r) {
