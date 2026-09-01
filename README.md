@@ -113,6 +113,41 @@ mvn spring-boot:run
 > 权威资料。这三种**均未实现**——在版式未经验证的情况下写解析器，产出的是看起来合理的
 > 错值，比不支持更糟。取得样图后，往来台湾通行证可复用 `CN_EEP_9` 版式常量低成本扩展。
 
+### 字段校验（validations）
+
+响应里除 `fields` 外还有一个 `validations`，给出字段的**自校验结论**——只做判断，
+不改动 `fields` 里的值：
+
+```json
+"validations": {
+  "idNumber":   {"valid": true,  "rule": "ISO 7064 MOD 11-2（GB 11643）", "note": null},
+  "creditCode": {"valid": false, "rule": "GB 32100-2015",
+                 "note": "含 GB 32100 排除的字母 I/O/S/V/Z，疑似把 1/0/5/U/2 读错"}
+}
+```
+
+| docType | 字段 | 规则 |
+|---|---|---|
+| `id-card` | idNumber | ISO 7064 MOD 11-2 校验位 + 出生日期段合法性 |
+| `driver-license` | licenseNumber | 同上（驾驶证号在中国就是身份证号） |
+| `business-license` | creditCode | GB 32100-2015 校验位 + 31 字符集 |
+| `invoice` | buyerTaxNo / sellerTaxNo | GB 32100-2015 |
+| `invoice` | totalAmountUpper / totalAmountLower | 大小写金额一致 + 金额 + 税额 = 价税合计 |
+| `bank-card` | cardNumber | Luhn（ISO/IEC 7812-1） |
+| `passport` | personalNumber | 仅当 `issuingCountry` 为 `CHN` 时按身份证规则校验 |
+
+只覆盖有校验规则的字段，其余字段不会出现在 `validations` 里（不是 `valid: true`）。
+`passport` 与 `hk-macao-permit` 的机读码另有独立的 `mrzValid` 字段。
+
+**为什么需要这一层**：上游 mica-ppocr-structured 的六个内置解析器全部是「标签定位 + 裸正则」，
+没有任何一处校验位验证。OCR 把身份证号里的 `0` 读成 `8`、把信用代码里的 `1` 读成 `I`，
+解析器都会照单全收，调用方拿到一个格式完全正确但内容错误的号码。
+
+> **能力边界**：校验是**后处理**（上游解析器在 jar 里改不了），因此只能发现问题、
+> 无法修复上游产生的错值。最典型的是驾驶证号——上游正则 `\d{15,18}` 不接受末位 X，
+> 末位为 X 的证号（约 1/11 概率）会被截断成 17 位数字返回。`validations` 能认出这个特征
+> 并提示「疑似末位 X 被截断」，但拿不回那个 X。
+
 新增自定义解析器只需三步：继承 `BaseStructuredParser<R>` 实现 `parseResults(List)`、
 结果类继承 `BaseStructuredResult`、在 `OcrParseService` 构造函数的 Map 里注册一行——
 docType 归一化、types 接口、fieldBoxes 与 Base64 接口都会自动生效。

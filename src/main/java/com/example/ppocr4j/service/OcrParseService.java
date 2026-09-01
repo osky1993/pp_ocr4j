@@ -3,6 +3,8 @@ package com.example.ppocr4j.service;
 import com.example.ppocr4j.exception.OcrException;
 import com.example.ppocr4j.parser.HkMacaoPermitParser;
 import com.example.ppocr4j.parser.PassportParser;
+import com.example.ppocr4j.parser.validate.FieldValidation;
+import com.example.ppocr4j.parser.validate.ParseValidator;
 import com.example.ppocr4j.web.ErrorCode;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +40,8 @@ public class OcrParseService {
     private final Map<String, String> normalizedTypes;
     private final OcrService ocrService;
     private final ObjectMapper objectMapper;
+    /** 字段后处理校验（校验位、金额勾稽），只给判断不改值。 */
+    private final ParseValidator parseValidator;
 
     /**
      * 结构化服务构造函数。
@@ -57,9 +61,11 @@ public class OcrParseService {
                            BusinessLicenseParser businessLicenseParser,
                            InvoiceParser invoiceParser,
                            PassportParser passportParser,
-                           HkMacaoPermitParser hkMacaoPermitParser) {
+                           HkMacaoPermitParser hkMacaoPermitParser,
+                           ParseValidator parseValidator) {
         this.ocrService = ocrService;
         this.objectMapper = objectMapper;
+        this.parseValidator = parseValidator;
         // LinkedHashMap 保序：/api/ocr/parse/types 按此顺序返回
         Map<String, Function<List<PPOcrV6Result>, ? extends BaseStructuredResult>> map = new LinkedHashMap<>();
         map.put("vehicle-license", vehicleLicenseParser::parseResults);
@@ -93,7 +99,10 @@ public class OcrParseService {
         String canonical = canonicalType(docType);
         List<PPOcrV6Result> results = ocrService.recognize(imageBytes, tier, rotate, autoRotate);
         BaseStructuredResult parsed = parsers.get(canonical).apply(results);
-        return new Outcome(canonical, results, extractFields(parsed), parsed.getFieldBoxes());
+        Map<String, Object> fields = extractFields(parsed);
+        // 后处理校验：只给判断，不改动 fields 里的值
+        Map<String, FieldValidation> validations = parseValidator.validate(canonical, fields);
+        return new Outcome(canonical, results, fields, parsed.getFieldBoxes(), validations);
     }
 
     /**
@@ -130,7 +139,10 @@ public class OcrParseService {
      * @param rawResults OCR 原始结果（含文本框与 rotatedDegrees）
      * @param fields     业务字段（如 plateNo/owner/…，未识别到的字段为 null）
      * @param fieldBoxes 字段名 → 命中文本框坐标列表，供可视化定位
+     * @param validations 字段名 → 校验结论（校验位、金额勾稽）。只覆盖可校验的字段，
+     *                    不含校验规则的字段不会出现在这里
      */
     public record Outcome(String docType, List<PPOcrV6Result> rawResults,
-                          Map<String, Object> fields, Map<String, List<int[][]>> fieldBoxes) {}
+                          Map<String, Object> fields, Map<String, List<int[][]>> fieldBoxes,
+                          Map<String, FieldValidation> validations) {}
 }
