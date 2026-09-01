@@ -1,0 +1,28 @@
+{
+  "case": "passport-specimen",
+  "docType": "passport",
+  "image": "passport-specimen.jpg",
+  "tier": "tiny",
+  "note": "荷兰官方 SPECIMEN（CC0，虚构人物）。surname/givenNames 期望为 null 不是缺陷——tiny 档会把姓名区的 << 少读一个，解析器按设计不猜姓名边界。若哪天读全了，门禁会报 UNEXPECTED，人工确认是改进后再更新基线。",
+  "critical": ["mrzValid", "passportNo", "birthDate", "expiryDate"],
+  "expected": {
+    "mrzLine2": "SPECI20142NLD6503101F2403096999999990<<<<<84",
+    "mrzValid": true,
+    "documentType": "P",
+    "issuingCountry": "NLD",
+    "passportNo": "SPECI2014",
+    "nationality": "NLD",
+    "sex": "F",
+    "birthDate": "1965-03-10",
+    "expiryDate": "2024-03-09",
+    "personalNumber": "999999990",
+    "nameEn": "DE BRUIJN WILLEKE LISELOTTE",
+    "surname": null,
+    "givenNames": null,
+    "nameCn": null,
+    "placeOfBirth": null,
+    "placeOfIssue": null,
+    "issueDate": null,
+    "authority": null
+  }
+}

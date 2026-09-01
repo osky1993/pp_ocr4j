@@ -1,0 +1,15 @@
+{
+  "case": "vehicle-license-1",
+  "docType": "vehicle-license",
+  "image": "1.png",
+  "tier": "tiny",
+  "note": "仓库自带行驶证图，OcrIntegrationTest 也断言了 plateNo 与发证日期",
+  "critical": ["plateNo", "vin"],
+  "expected": {
+    "plateNo": "京N99FF7",
+    "owner": "王涛",
+    "vehicleType": "小型轿车",
+    "vin": "6677YY441HN001149",
+    "issueDate": "2017-07-25"
+  }
+}

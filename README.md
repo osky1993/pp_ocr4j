@@ -277,6 +277,42 @@ mvn test
 集成回归测试用真实 tiny 引擎识别 `test_images/1.png` 并断言关键字段
 （「中华人民共和国机动车行驶证」「京N99FF7」等）——升级 mica-ppocr 版本时的精度回归防线。
 
+## 质量门禁
+
+新增证件类型、升级 mica-ppocr、改动解析器之后，提交前跑一次：
+
+```bash
+scripts/quality-gate.sh --update-baseline
+```
+
+门禁不改动 `pom.xml` 与 CI，全部由脚本 + 基线文件承载。对 OCR 结构化服务而言
+**字段准确率才是真实质量指标**——行覆盖率再高，抽错字段的解析器也没有价值。
+
+| 门禁 | 内容 | 阈值 |
+|------|------|------|
+| G1 | 测试全绿 | 零 Failures / Errors / Skipped |
+| G2 | 测试数不减少 | ≥ 基线（防止删测试换绿灯） |
+| G3a | 字段准确率不回退 | 已有 docType 只升不降；新增 ≥ 90% |
+| G3b | 关键字段零错 | `critical` 字段 100% |
+| G3c | 假阳率 | ≤ 5% |
+| G4 | 性能不劣化 | tiny 档耗时 ≤ 基线 × 1.2（告警级） |
+| G5 | 无真实证件入库 | `test_images/` 新增图必须在 README 登记来源与许可 |
+| G6 | Bean 契约 | 每个结果类字段都有可读 getter |
+| G7 | 文档同步 | README 类型表、演示页下拉框、fixture 覆盖全部 docType |
+
+**G3c 假阳率为什么单列**：准确率一个数字掩盖了两种严重程度截然不同的失败。漏字段
+（返回 null）调用方看得见；**填错值调用方看不见**——拿到一个看起来合理的错值比拿到 null
+危险得多。护照解析器开发时就实测踩到过这个（`sex` 一度被填成隔壁的 `国籍/Nationality`
+标签文本），必须有独立指标守住。
+
+固定测试集在 [`test_images/fixtures/`](test_images/fixtures/)，基线在 `quality-baseline.json`。
+基线**只升不降**：若某次迭代确实需要放宽，必须在 commit message 里用 `Accuracy-Change:`
+尾注写明原因——把「放宽标准」变成显式决策而不是悄悄发生。
+
+> **已知缺口**：上游内置的 `id-card` / `bank-card` / `driver-license` / `business-license`
+> / `invoice` 五种类型**没有准确率覆盖**，因为没有合规样图（真实证件禁止入库）。
+> 这一事实在 `DocsSyncTest.KNOWN_UNCOVERED` 里显式登记，取得合规样图后应补 fixture 并移除。
+
 ## 参数调优（USAGE.md）
 
 详见 [USAGE.md](USAGE.md)，内容索引：
