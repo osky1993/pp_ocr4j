@@ -109,12 +109,42 @@ class MrzFormatTest {
 
     @ParameterizedTest
     @EnumSource(MrzFormat.class)
-    void declaresTheFieldsEveryDocumentParserNeeds(MrzFormat format) {
-        // 这几个字段是所有机读证件解析器都要用的，任何版式都必须提供
-        for (String required : List.of("documentType", "issuingState", "documentNumber",
-                "birthDate", "sex", "expiryDate", "nationality", "names")) {
+    void declaresTheFieldsEveryMachineReadableDocumentHas(MrzFormat format) {
+        // 只有这三个字段是所有机读证件共有的。更早的版本还要求 sex/nationality/names，
+        // 但实测中国出入境证件的单行机读码后发现那是过度约束——它的机读码只有
+        // 证件号与两个日期，姓名性别国籍全在可视区。
+        for (String required : List.of("documentType", "documentNumber", "birthDate", "expiryDate")) {
             assertThat(format.field(required)).as("%s 缺少字段 %s", format, required).isNotNull();
         }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = MrzFormat.class, names = {"TD1", "TD2", "TD3"})
+    void icaoFormatsCarryIdentityFieldsInTheMrz(MrzFormat format) {
+        // ICAO 版式的机读区自带身份信息，可视区只是补充
+        for (String required : List.of("issuingState", "sex", "nationality", "names")) {
+            assertThat(format.hasField(required)).as("%s 缺少字段 %s", format, required).isTrue();
+        }
+        assertThat(format.nameLine()).isNotNegative();
+    }
+
+    @Test
+    void chineseExitEntryFormatKeepsIdentityOutsideTheMrz() {
+        // 中国出入境证件的机读码不含姓名/性别/国籍——解析器必须从可视区取，
+        // 这条断言把该事实钉住，防止有人照搬 ICAO 的假设去写解析器
+        MrzFormat f = MrzFormat.CN_EEP_9;
+        assertThat(f.lineCount()).isEqualTo(1);
+        assertThat(f.lineLength()).isEqualTo(30);
+        assertThat(f.hasField("names")).isFalse();
+        assertThat(f.hasField("sex")).isFalse();
+        assertThat(f.hasField("nationality")).isFalse();
+        assertThat(f.nameLine()).isEqualTo(-1);
+        // 字段位置由公安部公开的证件样本实测确认
+        assertThat(f.field("documentNumber").from()).isEqualTo(2);
+        assertThat(f.field("documentNumber").to()).isEqualTo(11);
+        assertThat(f.field("expiryDate").from()).isEqualTo(13);
+        assertThat(f.field("birthDate").from()).isEqualTo(21);
+        assertThat(f.composite().checkPos()).isEqualTo(29);
     }
 
     @Test

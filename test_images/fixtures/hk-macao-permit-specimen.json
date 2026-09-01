@@ -1,0 +1,22 @@
+{
+  "case": "hk-macao-permit-specimen",
+  "docType": "hk-macao-permit",
+  "image": "hk-macao-permit-specimen.jpg",
+  "tier": "tiny",
+  "note": "公安部出入境管理局公开的往来港澳通行证证件样本（PD-PRC-exempt）。持证人为虚构的「证件样本 / ZHENGJIAN, YANGBEN」。机读码四个校验位自洽，且证件号/出生日期/有效期与正面印刷值逐一吻合，是一组强断言锚点。",
+  "critical": ["mrzValid", "permitNo", "birthDate", "expiryDate"],
+  "expected": {
+    "mrzLine": "CSCA32732010<2901178<8108038<2",
+    "mrzValid": true,
+    "documentType": "CS",
+    "permitNo": "CA3273201",
+    "birthDate": "1981-08-03",
+    "validFrom": "2019-01-18",
+    "expiryDate": "2029-01-17",
+    "nameCn": "证件样本",
+    "nameEn": "ZHENGJIAN, YANGBEN",
+    "sex": "F",
+    "issuingAuthority": "中华人民共和国出入境管理局",
+    "placeOfIssue": "广东"
+  }
+}

@@ -1,19 +1,26 @@
 {
   "testsRun": 36,
   "cases": {
+    "hk-macao-permit-specimen": {
+      "docType": "hk-macao-permit",
+      "fieldAccuracy": 1.0,
+      "criticalAccuracy": 1.0,
+      "falsePositiveRate": 0.0,
+      "costMs": 243
+    },
     "passport-specimen": {
       "docType": "passport",
       "fieldAccuracy": 1.0,
       "criticalAccuracy": 1.0,
       "falsePositiveRate": 0.0,
-      "costMs": 2057
+      "costMs": 1878
     },
     "vehicle-license-1": {
       "docType": "vehicle-license",
       "fieldAccuracy": 1.0,
       "criticalAccuracy": 1.0,
       "falsePositiveRate": 0.0,
-      "costMs": 1395
+      "costMs": 1310
     }
   }
 }

@@ -85,6 +85,7 @@ mvn spring-boot:run
 | `business-license` | 营业执照 | creditCode, name, type, legalPerson, registeredCapital, establishDate, operatingPeriod, address, businessScope |
 | `invoice` | 增值税发票 | invoiceCode, invoiceNo, invoiceDate, 买方/卖方名称·税号·地址电话·开户行, goodsName, amount, taxRate, taxAmount, totalAmountUpper/Lower, payee, reviewer, issuer |
 | `passport` | 护照 | mrzLine1/2, mrzValid, documentType, issuingCountry, passportNo, nationality, nameEn, surname, givenNames, sex, birthDate, expiryDate, personalNumber, nameCn, placeOfBirth, placeOfIssue, issueDate, authority |
+| `hk-macao-permit` | 往来港澳通行证 | mrzLine, mrzValid, documentType, permitNo, birthDate, validFrom, expiryDate, nameCn, nameEn, sex, issuingAuthority, placeOfIssue |
 
 `passport` 走 **MRZ 优先、可视区兜底** 策略：先解资料页底部两行 44 字符机读区
 （ICAO 9303 TD3，定长定位且自带校验位），再用中英双语标签补齐 MRZ 里没有的字段
@@ -93,6 +94,24 @@ mvn spring-boot:run
 字段仍返回但需人工复核；`null` 表示没找到机读区，全部字段来自可视区。
 注意 OCR 可能把姓名区的 `<<` 分隔符少读一个，此时 `surname`/`givenNames` 为 null（不猜边界以免切错复姓），
 请改用 `nameEn`。
+
+`hk-macao-permit`（往来港澳通行证）走的是**中国出入境证件自有的单行 30 字符机读码**，
+印在卡片正面底部——注意它**不是** ICAO TD1：卡片虽按 ICAO DOC 9303 TD-1 的物理尺寸
+（85.6×54mm）制作，但机读码布局与 TD1 的 3 行 × 30 完全不同，背面则是签注区而非机读区。
+布局与四个校验位由公安部公开的证件样本实测确认（校验位算法与 ICAO 的 7-3-1 加权模 10 相同）：
+
+```
+[0,2) 标识 CS │ [2,11) 证件号 [11]校验位 │ [13,19) 有效期 [19]校验位
+              │ [21,27) 出生日期 [27]校验位 │ [29] 综合校验位
+```
+
+机读码**不含**姓名、性别、签发机关、有效期起始日，这些只能从可视区取，可靠性低于机读码字段。
+
+> **同类证件的现状**：往来台湾通行证号码为 `L`/`T`+8 位，同为 9 位、同一发证体系，
+> 疑似同版式但**未取得样图验证**；台湾居民来往大陆通行证（台胞证）号码 8 位、机读码标识
+> 为 `CT`，字段位置因号码长度不同而**必然不同**；外国人永久居留身份证的机读码结构无公开
+> 权威资料。这三种**均未实现**——在版式未经验证的情况下写解析器，产出的是看起来合理的
+> 错值，比不支持更糟。取得样图后，往来台湾通行证可复用 `CN_EEP_9` 版式常量低成本扩展。
 
 新增自定义解析器只需三步：继承 `BaseStructuredParser<R>` 实现 `parseResults(List)`、
 结果类继承 `BaseStructuredResult`、在 `OcrParseService` 构造函数的 Map 里注册一行——

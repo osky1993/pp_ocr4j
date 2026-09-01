@@ -3,8 +3,8 @@ package com.example.ppocr4j.contract;
 import com.example.ppocr4j.parser.PassportResult;
 import net.dreamlu.mica.ai.ppocr.structured.parser.core.BaseStructuredResult;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.type.filter.AssignableTypeFilter;
 
 import java.beans.IntrospectionException;
 import java.beans.Introspector;
@@ -33,9 +33,29 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ResultBeanContractTest {
 
-    /** 本项目自建的结构化结果类。新增证件类型时在此登记。 */
-    private static final List<Class<? extends BaseStructuredResult>> RESULT_CLASSES = List.of(
-            PassportResult.class);
+    /** 本项目自建结果类所在的包。 */
+    private static final String PARSER_PACKAGE = "com.example.ppocr4j.parser";
+
+    /**
+     * 扫描出本项目所有结构化结果类。
+     *
+     * <p>用 classpath 扫描而不是手工登记——手工登记的清单一定会忘记更新，
+     * 新增的结果类就此静静地失去 Bean 契约保护，而测试还是绿的。
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Class<? extends BaseStructuredResult>> resultClasses() {
+        var scanner = new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter(new AssignableTypeFilter(BaseStructuredResult.class));
+        List<Class<? extends BaseStructuredResult>> found = new ArrayList<>();
+        for (var bd : scanner.findCandidateComponents(PARSER_PACKAGE)) {
+            try {
+                found.add((Class<? extends BaseStructuredResult>) Class.forName(bd.getBeanClassName()));
+            } catch (ClassNotFoundException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+        return found;
+    }
 
     /** 基类自带、由上游 lombok 生成的字段，不参与本项目的手写契约检查。 */
     private static final Set<String> BASE_FIELDS = Set.of("rawResults", "fieldBoxes");
@@ -44,7 +64,7 @@ class ResultBeanContractTest {
     void everyResultClassHasReadableGetterForEveryField() throws IntrospectionException {
         List<String> violations = new ArrayList<>();
 
-        for (Class<? extends BaseStructuredResult> type : RESULT_CLASSES) {
+        for (Class<? extends BaseStructuredResult> type : resultClasses()) {
             Set<String> readable = Arrays.stream(Introspector.getBeanInfo(type).getPropertyDescriptors())
                     .filter(pd -> pd.getReadMethod() != null)
                     .map(PropertyDescriptor::getName)
@@ -72,13 +92,14 @@ class ResultBeanContractTest {
     }
 
     /**
-     * 结果类必须继承 {@link BaseStructuredResult}，否则拿不到 rawResults / fieldBoxes，
-     * 且 {@code OcrParseService} 的注册签名不接受。
+     * 扫描必须真的扫到东西——扫描器配错包名会让所有断言空转通过。
      */
-    @ParameterizedTest
-    @ValueSource(classes = {PassportResult.class})
-    void resultClassesExtendBaseStructuredResult(Class<?> type) {
-        assertThat(BaseStructuredResult.class).isAssignableFrom(type);
+    @Test
+    void scannerActuallyFindsResultClasses() {
+        assertThat(resultClasses())
+                .as("没有扫到任何结果类，检查包名 %s", PARSER_PACKAGE)
+                .isNotEmpty()
+                .contains(PassportResult.class);
     }
 
     /**
@@ -88,7 +109,7 @@ class ResultBeanContractTest {
     @Test
     void resultClassesDoNotShadowBaseFields() {
         List<String> shadowed = new ArrayList<>();
-        for (Class<? extends BaseStructuredResult> type : RESULT_CLASSES) {
+        for (Class<? extends BaseStructuredResult> type : resultClasses()) {
             for (Field f : type.getDeclaredFields()) {
                 if (BASE_FIELDS.contains(f.getName())) {
                     shadowed.add(type.getSimpleName() + "." + f.getName());

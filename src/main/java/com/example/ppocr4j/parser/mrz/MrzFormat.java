@@ -105,7 +105,48 @@ public enum MrzFormat {
             List.of(
                     Pattern.compile("^P[A-Z<][A-Z<]{3}[A-Z<]+$"),
                     Pattern.compile("^[A-Z0-9<]{9}[0-9<][A-Z<]{3}[0-9<]{6}[0-9<][MFX<][0-9<]{6}[0-9<].*$")),
-            0);
+            0),
+
+    /**
+     * 中国出入境证件单行机读码（1 行 × 30 字符，证件号 9 位）。
+     *
+     * <p><b>这不是 ICAO 版式</b>，是中国出入境证件的自有格式，印在卡片正面底部
+     * （不是背面——背面是签注区）。虽然卡片按 ICAO DOC 9303 TD-1 的物理尺寸
+     * （85.6×54mm）制作，但机读码布局与 TD1 的 3 行 × 30 完全不同。
+     *
+     * <pre>
+     * [0,2)  证件标识（往来港澳通行证为 "CS"）
+     * [2,11) 证件号 9 位   [11] 校验位
+     * [12]   分隔 '<'
+     * [13,19) 有效期至 YYMMDD  [19] 校验位
+     * [20]   分隔 '<'
+     * [21,27) 出生日期 YYMMDD  [27] 校验位
+     * [28]   分隔 '<'
+     * [29]   综合校验位 = cd([2,12) + [13,20) + [21,28))
+     * </pre>
+     *
+     * <p><b>校验位算法与 ICAO 完全相同</b>（7-3-1 加权模 10），综合校验位的构成方式
+     * （数据段连同各自校验位一起拼接）也一致。本规格由公安部出入境管理局公开的
+     * 往来港澳通行证证件样本实测确认，四个校验位全部自洽，且证件号、出生日期、
+     * 有效期三项与卡片正面印刷值逐一吻合。
+     *
+     * <p>注意机读码<b>不含姓名、性别、国籍</b>——这些只在可视区，需要标签定位补齐。
+     *
+     * <p><b>适用范围</b>：已验证往来港澳通行证（号码 {@code C}+8 位，或 2018-12-03 后
+     * {@code C}+字母+7 位）。往来台湾通行证号码为 {@code L}/{@code T}+8 位，同为 9 位、
+     * 同一发证体系，疑似同版式但<b>未经样图验证</b>。台湾居民来往大陆通行证（台胞证）
+     * 号码为 8 位、机读码标识为 {@code CT}，字段位置因号码长度不同而<b>必然不同</b>，
+     * 需要另立版式常量，取得样图前不要用本常量解析它。
+     */
+    CN_EEP_9(1, 30, 0,
+            List.of(
+                    MrzFieldSpec.of("documentType", "证件标识", 0, 0, 2),
+                    MrzFieldSpec.checked("documentNumber", "证件号", 0, 2, 11, 11),
+                    MrzFieldSpec.checked("expiryDate", "有效期", 0, 13, 19, 19),
+                    MrzFieldSpec.checked("birthDate", "出生日期", 0, 21, 27, 27)),
+            MrzCompositeSpec.of(0, 29, 0, 2, 12, 0, 13, 20, 0, 21, 28),
+            List.of(Pattern.compile("^[A-Z0-9<]{2}[A-Z0-9<]{9}[0-9<]<[0-9<]{6}[0-9<]<[0-9<]{6}[0-9<]<[0-9<]$")),
+            -1);
 
     /** MRZ 合法字符集：大写字母、数字、填充符。 */
     public static final Pattern CHARSET = Pattern.compile("[A-Z0-9<]+");
@@ -145,9 +186,30 @@ public enum MrzFormat {
         return anchorLine;
     }
 
-    /** 姓名区所在行（TD1 在第 3 行，TD2/TD3 在第 1 行）。 */
+    /**
+     * 姓名区所在行（TD1 在第 3 行，TD2/TD3 在第 1 行）。
+     *
+     * @return 行下标；{@code -1} 表示该版式的机读码不含姓名区
+     *         （中国出入境证件就是如此，姓名只在可视区）
+     */
     public int nameLine() {
         return nameLine;
+    }
+
+    /**
+     * 该版式是否声明了某个字段。
+     *
+     * <p>不同版式携带的字段并不相同：ICAO 版式含姓名/性别/国籍，
+     * 而中国出入境证件的单行机读码只有证件号与两个日期。解析器取可选字段前
+     * 应当先问一句，而不是假定字段一定存在。
+     */
+    public boolean hasField(String name) {
+        for (MrzFieldSpec spec : fields) {
+            if (spec.name().equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public List<MrzFieldSpec> fields() {

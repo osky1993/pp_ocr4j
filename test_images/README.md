@@ -4,11 +4,17 @@
 |------|------|-------------|
 | `1.png` | 机动车行驶证 | 仓库自带 |
 | `passport-specimen.jpg` | 荷兰护照资料页 **SPECIMEN 样本** | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dutch_passport_specimen_issued_9_March_2014.jpg)，CC0 1.0 公有领域 |
+| `hk-macao-permit-specimen.jpg` | 往来港澳通行证 **官方证件样本**（正面） | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Biometric_Two-way_Permit_(Front),_2019_version.jpg)，公安部出入境管理局发布，PD-PRC-exempt 公有领域 |
 
 `passport-specimen.jpg` 是荷兰身份服务局（RvIG）公开发布的官方样本，持照人
 「Willeke Liselotte De Bruijn」为虚构人物，页面印有 SPECIMEN 字样，**不涉及任何真实个人信息**。
 选它作为回归锚点的原因是机读区（MRZ）两行完整清晰，且五个校验位全部自洽，
 可以对 `PassportParser` 的 MRZ 链路做强断言（见 `OcrIntegrationTest#parsesPassportMrzFields`）。
+
+`hk-macao-permit-specimen.jpg` 是公安部出入境管理局公开发布的证件样本，持证人为虚构的
+「证件样本 / ZHENGJIAN, YANGBEN」，**不涉及任何真实个人信息**。它的价值在于卡片正面底部
+那行 30 字符机读码：四个校验位全部自洽，且证件号、出生日期、有效期与正面印刷值逐一吻合，
+可以对 `HkMacaoPermitParser` 做强断言。
 
 > 请勿向本目录提交任何真实证件图片。护照解析器的可视区分支（中文标签定位）
 > 由 `PassportParserTest` 用构造出的文本框覆盖，不需要真实中国护照样图。
