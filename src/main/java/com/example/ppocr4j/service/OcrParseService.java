@@ -1,6 +1,7 @@
 package com.example.ppocr4j.service;
 
 import com.example.ppocr4j.exception.OcrException;
+import com.example.ppocr4j.parser.PassportParser;
 import com.example.ppocr4j.web.ErrorCode;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -53,7 +54,8 @@ public class OcrParseService {
                            BankCardParser bankCardParser,
                            DriverLicenseParser driverLicenseParser,
                            BusinessLicenseParser businessLicenseParser,
-                           InvoiceParser invoiceParser) {
+                           InvoiceParser invoiceParser,
+                           PassportParser passportParser) {
         this.ocrService = ocrService;
         this.objectMapper = objectMapper;
         // LinkedHashMap 保序：/api/ocr/parse/types 按此顺序返回
@@ -64,6 +66,8 @@ public class OcrParseService {
         map.put("driver-license", driverLicenseParser::parseResults);
         map.put("business-license", businessLicenseParser::parseResults);
         map.put("invoice", invoiceParser::parseResults);
+        // 本项目自定义解析器：护照（ICAO 9303 TD3，MRZ 优先 + 可视区兜底）
+        map.put("passport", passportParser::parseResults);
         this.parsers = map;
         Map<String, String> normalized = new LinkedHashMap<>();
         map.keySet().forEach(k -> normalized.put(k.replace("-", ""), k));

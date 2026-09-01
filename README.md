@@ -73,7 +73,8 @@ mvn spring-boot:run
 
 ### 字段级结构化提取
 
-基于 mica-ppocr-structured 1.1.x，`docType` 支持（大小写、`-`/`_`/驼峰写法均兼容）：
+前六种基于 mica-ppocr-structured 1.1.x 内置解析器，`passport` 为本项目自建（见 [`parser/PassportParser`](src/main/java/com/example/ppocr4j/parser/PassportParser.java)）。
+`docType` 支持（大小写、`-`/`_`/驼峰写法均兼容）：
 
 | docType | 证件 | 提取字段 |
 |---------|------|----------|
@@ -83,6 +84,19 @@ mvn spring-boot:run
 | `driver-license` | 驾驶证 | licenseNumber, name, gender, nationality, address, birthDate, issueDate, vehicleClass, issuingAuthority, validFrom, validTo |
 | `business-license` | 营业执照 | creditCode, name, type, legalPerson, registeredCapital, establishDate, operatingPeriod, address, businessScope |
 | `invoice` | 增值税发票 | invoiceCode, invoiceNo, invoiceDate, 买方/卖方名称·税号·地址电话·开户行, goodsName, amount, taxRate, taxAmount, totalAmountUpper/Lower, payee, reviewer, issuer |
+| `passport` | 护照 | mrzLine1/2, mrzValid, documentType, issuingCountry, passportNo, nationality, nameEn, surname, givenNames, sex, birthDate, expiryDate, personalNumber, nameCn, placeOfBirth, placeOfIssue, issueDate, authority |
+
+`passport` 走 **MRZ 优先、可视区兜底** 策略：先解资料页底部两行 44 字符机读区
+（ICAO 9303 TD3，定长定位且自带校验位），再用中英双语标签补齐 MRZ 里没有的字段
+（中文姓名、出生地点、签发地点、签发机关）。`mrzValid=true` 表示护照号/出生日期/有效期/
+个人号/综合五个校验位全部自洽，字段可直接采信；`false` 表示至少一位不匹配（OCR 误识或图片模糊），
+字段仍返回但需人工复核；`null` 表示没找到机读区，全部字段来自可视区。
+注意 OCR 可能把姓名区的 `<<` 分隔符少读一个，此时 `surname`/`givenNames` 为 null（不猜边界以免切错复姓），
+请改用 `nameEn`。
+
+新增自定义解析器只需三步：继承 `BaseStructuredParser<R>` 实现 `parseResults(List)`、
+结果类继承 `BaseStructuredResult`、在 `OcrParseService` 构造函数的 Map 里注册一行——
+docType 归一化、types 接口、fieldBoxes 与 Base64 接口都会自动生效。
 
 ```bash
 curl -F "file=@行驶证.jpg" -F "tier=small" http://localhost:8080/api/ocr/parse/vehicle-license

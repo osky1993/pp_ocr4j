@@ -155,12 +155,48 @@ class OcrIntegrationTest {
         assertThat(types.get("code")).isEqualTo(0);
         List<String> list = (List<String>) ((Map<String, Object>) types.get("data")).get("types");
         assertThat(list).contains("vehicle-license", "id-card", "bank-card",
-                "driver-license", "business-license", "invoice");
+                "driver-license", "business-license", "invoice", "passport");
 
         var form = new LinkedMultiValueMap<String, Object>();
         form.add("file", new FileSystemResource("test_images/1.png"));
-        Map<String, Object> body = postImage("/api/ocr/parse/passport", form);
+        Map<String, Object> body = postImage("/api/ocr/parse/not-a-doc-type", form);
         assertThat(body.get("code")).isEqualTo(1001);
+    }
+
+    /**
+     * 护照结构化回归：样图为荷兰官方 SPECIMEN（CC0，虚构人物），
+     * MRZ 两行完整且 5 个校验位自洽，可作为 MRZ 解析链路的强断言锚点。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void parsesPassportMrzFields() {
+        var form = new LinkedMultiValueMap<String, Object>();
+        form.add("file", new FileSystemResource("test_images/passport-specimen.jpg"));
+        form.add("tier", "tiny");
+        Map<String, Object> body = postImage("/api/ocr/parse/passport", form);
+
+        assertThat(body.get("code")).isEqualTo(0);
+        Map<String, Object> data = (Map<String, Object>) body.get("data");
+        assertThat(data.get("docType")).isEqualTo("passport");
+        Map<String, Object> fields = (Map<String, Object>) data.get("fields");
+
+        // MRZ 校验位全部自洽——这条挂了说明 OCR 把机读区读错了字符
+        assertThat(fields.get("mrzValid")).isEqualTo(true);
+        assertThat(fields.get("passportNo")).isEqualTo("SPECI2014");
+        assertThat(fields.get("issuingCountry")).isEqualTo("NLD");
+        assertThat(fields.get("nationality")).isEqualTo("NLD");
+        assertThat(fields.get("documentType")).isEqualTo("P");
+        assertThat(fields.get("sex")).isEqualTo("F");
+        // MRZ 日期与可视区印刷值互相印证：10 MAA/MAR 1965、09 MAA/MAR 2024
+        assertThat(fields.get("birthDate")).isEqualTo("1965-03-10");
+        assertThat(fields.get("expiryDate")).isEqualTo("2024-03-09");
+        assertThat((String) fields.get("mrzLine2")).hasSize(44);
+
+        // 姓名区的 << 分隔符在 tiny 档会被少读一个，此时不猜姓/名，只保证 nameEn 可用
+        assertThat((String) fields.get("nameEn")).contains("BRUIJN", "WILLEKE");
+
+        assertThat(fields).doesNotContainKeys("rawResults", "fieldBoxes");
+        assertThat((Map<String, Object>) data.get("fieldBoxes")).containsKeys("mrzLine2", "passportNo");
     }
 
     @Test
