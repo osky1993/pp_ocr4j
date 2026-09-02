@@ -304,22 +304,41 @@ mkdir -p models/ppocr-v6/small && for f in det.onnx rec.onnx dict.txt; do curl -
 ```
 pp_ocr4j/
 ├── pom.xml
+├── quality-baseline.json                    # 质量门禁基线（准确率/耗时，只升不降）
 ├── models/ppocr-v6/tiny/                    # tiny 档模型（small/medium 不入库，见 .gitignore）
 ├── models/ppocr-v6/doc_ori/doc_ori.onnx     # 文档方向分类模型（默认开启，三档共享，随仓库提交）
-├── test_images/1.png                        # 集成回归测试用图
+├── test_images/                             # 测试图与固定测试集（来源与许可见目录内 README）
+│   ├── 1.png                                #   行驶证，集成回归 + 性能基准用图
+│   ├── passport-specimen.jpg                #   荷兰护照 SPECIMEN（CC0）
+│   ├── hk-macao-permit-specimen.jpg         #   往来港澳通行证官方样本（PD）
+│   └── fixtures/*.json                      #   门禁用例：图 + docType + 期望字段 + critical 字段
+├── scripts/
+│   ├── quality-gate.sh                      # 质量门禁执行器（G1~G7）
+│   ├── quality_check.py                     #   字段准确率计算与基线比对
+│   └── package*.sh / deploy*.sh             # 打包与部署
 ├── .github/workflows/ci.yml                 # CI：JDK17 + mvn package（含集成测试）
 └── src/
     ├── main/java/com/example/ppocr4j/
     │   ├── config/                          # OcrProperties(ocr.*)、OcrTierCustomizer
     │   ├── exception/OcrException.java
     │   ├── health/OcrReadinessIndicator.java
+    │   ├── parser/                          # 本项目自建的结构化解析器
+    │   │   ├── PassportParser + Result      #   护照（ICAO TD3）
+    │   │   ├── HkMacaoPermitParser + Result #   往来港澳通行证（中国出入境单行机读码）
+    │   │   ├── mrz/                         #   MRZ 引擎：版式数据表 + 定位 + 校验位 + 日期
+    │   │   └── validate/                    #   字段自校验：校验位算法、大写金额、按 docType 分派
     │   ├── service/                         # OcrService / OcrEngineManager / OcrExecutor / OcrWarmupRunner
+    │   │   └── OcrParseService              #   docType 注册表 + 解析 + 后处理校验
     │   ├── task/OcrTaskManager.java         # 异步任务（内存态）
     │   └── web/                             # 控制器、ApiResult/ErrorCode、TraceId/ApiKey 过滤器
     ├── main/resources/
     │   ├── application.yml
     │   └── static/index.html                # 调试台
-    └── test/java/                           # 单元测试 + tiny 引擎集成回归测试
+    └── test/java/com/example/ppocr4j/
+        ├── contract/                        # 门禁 G6/G7：Bean 契约、文档与 fixture 同步
+        ├── parser/                          # 解析器与 MRZ/校验组件单元测试
+        ├── service/ · web/                  # 并发原语、请求解码
+        └── OcrIntegrationTest.java          # tiny 引擎真实推理的端到端回归
 ```
 
 ## 测试
@@ -366,6 +385,46 @@ scripts/quality-gate.sh --update-baseline
 > **已知缺口**：上游内置的 `id-card` / `bank-card` / `driver-license` / `business-license`
 > / `invoice` 五种类型**没有准确率覆盖**，因为没有合规样图（真实证件禁止入库）。
 > 这一事实在 `DocsSyncTest.KNOWN_UNCOVERED` 里显式登记，取得合规样图后应补 fixture 并移除。
+
+## 扩展路线图与已知缺口
+
+结构化解析已经过四轮迭代（质量门禁 → MRZ 引擎 → 港澳通行证 → 字段校验）。
+以下是**明确已知、尚未完成**的部分，记录在此以便接续。
+
+### 可低成本扩展（版式已知，缺样图）
+
+| 证件 | 已知信息 | 接续做法 |
+|------|---------|---------|
+| 往来台湾通行证 | 号码 `L`/`T`+8 位，共 9 位，同一发证体系 | 疑似复用 `MrzFormat.CN_EEP_9`，取得样图实测确认标识码与字段位置后即可加解析器 |
+| 台湾居民来往大陆通行证 | 号码 8 位，机读码标识 `CT` | 号码长度不同 → 字段位置必然不同，需**新立版式常量**，不能套用 `CN_EEP_9` |
+| 外国人永久居留身份证 | 无 | 机读码结构无公开权威资料，需官方文档或样图 |
+
+**不要在版式未经验证的情况下先写解析器**——产出的是看起来合理的错值，比不支持更糟。
+护照与港澳通行证两次的经验都表明：必须先打 `/api/ocr` 看原始识别文本，再据此写解析器。
+凭想象写的正则，实测时几乎总是错的（`<<` 会被漏读、空格会被吃掉导致日月粘连、
+标签会被读成错字）。
+
+### 已放弃（技术前提消失）
+
+铁路电子客票报销凭证、航空运输电子客票行程单——原计划做 OCR 解析，检索后放弃：
+
+- 铁路：2024-11-01 起推广数电票，纸质报销凭证 2025 年 9 月底已全面退场
+- 航空：2025-10-01 起国内航班完全停止打印纸质行程单
+
+两者现在都是数电票（PDF / OFD），**本身带结构化数据**。对这类文件用 OCR 是错误的
+技术选择——直接解析 OFD / XML 能拿到 100% 准确的字段，OCR 再准也是在猜。
+如果确有需求，应该做的是 OFD 解析（另一个技术栈），或者针对「用户提交的数电票截图」
+这一特定场景做 OCR。
+
+### 准确率覆盖缺口
+
+上游内置的 `id-card` / `bank-card` / `driver-license` / `business-license` / `invoice`
+五种类型**没有字段准确率覆盖**，因为没有合规样图（真实证件禁止入库）。这一事实显式登记在
+`DocsSyncTest.KNOWN_UNCOVERED`，并有一条测试防止豁免清单留下僵尸条目。
+取得合规样图后应补 fixture 并从清单移除，以恢复门禁保护。
+
+这五种类型现在有 `validations` 字段级校验（校验位、金额勾稽），但那是**结果自校验**，
+不能替代准确率基准——校验位只能发现「值是错的」，发现不了「字段抓错了位置」。
 
 ## 参数调优（USAGE.md）
 

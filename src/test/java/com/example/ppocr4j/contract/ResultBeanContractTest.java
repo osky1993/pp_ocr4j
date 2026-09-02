@@ -28,8 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <b>静默丢掉该字段</b>——接口少返回一个值，没有任何编译错误、没有任何运行时异常，
  * 只有调用方在生产上发现字段永远是空的。
  *
- * <p>反射扫一遍就能把这类问题锁死在提交之前。新增证件解析器时，把结果类加进
- * {@link #RESULT_CLASSES} 即可。
+ * <p>反射扫一遍就能把这类问题锁死在提交之前。结果类由 classpath 扫描自动发现，
+ * 新增证件解析器时无需在这里登记。
  */
 class ResultBeanContractTest {
 
