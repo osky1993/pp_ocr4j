@@ -65,4 +65,4 @@ mica:
       # rec-batch-size: 6
       # intra-op-num-threads: 1
       # inter-op-num-threads: 1
-      # prefer-accelerator: false
+      # prefer-accelerator: false   # 不要直接改：由 ocr.accelerator 统一控制（见上文）

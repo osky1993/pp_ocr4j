@@ -261,9 +261,11 @@ journalctl -u pp-ocr4j -f
 
 ## GPU 加速
 
-mica-ppocr 1.2.2 之前的 `prefer-accelerator` 存在缺陷（provider 只记日志、未应用到会话，任何平台
-都是空操作），因此本项目内置了修复版引擎 `AcceleratedPPOcrV6Engine`，由 `ocr.accelerator` 控制。
-上游已在 1.2.2 修复（gitee #IKDEZI），但仍只能自动选择、不能显式指定 coreml/cuda，本项目暂保留修复版引擎：
+加速由 `ocr.accelerator: cpu | auto | coreml | cuda` 统一控制，推理走 mica-ppocr 官方引擎
+（1.2.2 起 `prefer-accelerator` 真正注册 EP，gitee #IKDEZI；此前项目内置的修复版引擎已移除）。
+上游只能按 CoreML > CUDA 自动选择，本项目启动时先按本机可用 provider 判定：显式指定的加速器
+只有在上游必然选中它时才开启，否则回落 `cpu` 并告警——同一份 `cuda` 配置落到 Mac 上不会被
+误选成 CoreML。不要直接改 `mica.ppocr.prefer-accelerator`，以 `ocr.accelerator` 为准：
 
 - **NVIDIA CUDA**（Linux/Windows，CUDA 11.8 + cuDNN 8，对应 ORT 1.18）：`mvn -Pgpu package` 构建
   （切换 `onnxruntime_gpu` 依赖）+ 运行时 `--ocr.accelerator=cuda`；已完成构建链路，

@@ -7,7 +7,7 @@ import java.io.Closeable;
 import java.util.List;
 
 /**
- * OCR 引擎统一抽象：屏蔽「库原版 CPU 引擎」与「本项目加速版引擎」的差异，
+ * OCR 引擎统一抽象：屏蔽库原版引擎的生命周期差异（Starter 托管 / 本项目懒加载），
  * 让 OcrEngineManager / OcrService 无差别使用。
  */
 public interface OcrEngine extends Closeable {

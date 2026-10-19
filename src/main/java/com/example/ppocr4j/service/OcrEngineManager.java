@@ -2,7 +2,6 @@ package com.example.ppocr4j.service;
 
 import com.example.ppocr4j.config.Accelerator;
 import com.example.ppocr4j.config.OcrProperties;
-import com.example.ppocr4j.engine.AcceleratedPPOcrV6Engine;
 import com.example.ppocr4j.exception.OcrException;
 import com.example.ppocr4j.web.ErrorCode;
 import net.dreamlu.mica.ai.ppocr.config.PPOcrV6Config;
@@ -24,13 +23,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * 按模型档次（tiny / small / medium）管理 {@link OcrEngine}：
  * 首次请求某档时懒加载并缓存，应用关闭时统一释放。
  *
- * <p>引擎实现按 ocr.accelerator 二选一：
+ * <p>引擎统一使用库原版 {@link PPOcrV6Engine}（1.2.2+ 的 preferAccelerator 已真正注册 EP）。
+ * ocr.accelerator 启动期经 {@link Accelerator#resolve()} 按本机可用 provider 判定，
+ * 再映射为各档引擎的 preferAccelerator：
  * <ul>
- *   <li>cpu（默认）：库原版 {@link PPOcrV6Engine}，保持 bit-exact；
- *       Starter 自动装配的默认引擎注册进来复用，避免同档双实例。</li>
- *   <li>auto/coreml/cuda：本项目 {@link AcceleratedPPOcrV6Engine}（修复了上游
- *       provider 不生效的缺陷）；此时 Starter 引擎闲置不用（tiny 档内存代价可忽略）。</li>
+ *   <li>解析为 cpu（默认，或请求的加速器本机不可用）：preferAccelerator=false，保持 bit-exact；</li>
+ *   <li>解析为 coreml/cuda：preferAccelerator=true，上游按 CoreML > CUDA 自动选择，
+ *       resolve 已保证选中的就是请求的那个。</li>
  * </ul>
+ * Starter 自动装配的默认引擎仅在其 preferAccelerator 与上述映射一致时注册进来复用（避免同档双实例），
+ * 否则闲置不用（tiny 档内存代价可忽略）。
  *
  * <p>懒加载引擎的调参（阈值、批大小、线程数等）继承 application.yml
  * 生效后的基底配置，仅替换三个模型路径——保证三档行为一致。</p>
@@ -55,8 +57,11 @@ public class OcrEngineManager implements DisposableBean {
     /** 当请求未传 tier 或传入空值时的默认 fallback 档。 */
     private final String defaultTier;
 
-    /** 生效的加速器（启动期解析一次并落日志）。 */
+    /** 配置的加速器（ocr.accelerator 原值）。 */
     private final Accelerator accelerator;
+
+    /** 映射给各档引擎的 preferAccelerator（启动期按本机可用 provider 解析一次并落日志）。 */
+    private final boolean preferAccelerator;
 
     /**
      * 组装引擎管理器。
@@ -65,7 +70,7 @@ public class OcrEngineManager implements DisposableBean {
      * <ul>
      *   <li>读取 starter 的默认模型路径，推断默认档次。</li>
      *   <li>读取全局加速策略（CPU / AUTO / COREML / CUDA）。</li>
-     *   <li>如果启动为 CPU，默认档位引擎复用 Starter 实例并缓存；其余模式按档位延迟创建。</li>
+     *   <li>Starter 实例的 preferAccelerator 与映射结果一致时复用为默认档引擎；其余按档位延迟创建。</li>
      *   <li>失败路径下，非法 tier 与模型缺失会在调用 `getEngine` 时快速返回统一错误码。</li>
      * </ul>
      * </p>
@@ -79,13 +84,23 @@ public class OcrEngineManager implements DisposableBean {
                 .filter(t -> config.getDetModelPath().contains("/" + t + "/"))
                 .findFirst()
                 .orElse("tiny");
-        if (accelerator == Accelerator.CPU) {
+        Accelerator resolved = accelerator.resolve();
+        this.preferAccelerator = resolved != Accelerator.CPU;
+        if (accelerator != Accelerator.CPU && accelerator != Accelerator.AUTO && resolved == Accelerator.CPU) {
+            log.warn("ocr.accelerator={} 在本机不可用（或上游自动选择会选中其他加速器），回落 CPU", accelerator);
+        } else if (preferAccelerator) {
+            log.info("加速模式 {} 已开启（解析为 {}）：各档引擎 preferAccelerator=true；注意加速后不再保证 bit-exact",
+                    accelerator, resolved);
+        }
+        if (config.isPreferAccelerator() == preferAccelerator) {
             // Starter 提供的引擎由 Spring 生命周期管理（adapter 的 close 为 no-op），
             // 先注册进去避免重复创建默认档实例。
             engines.put(defaultTier, new LibraryEngineAdapter(defaultEngine, true));
+        } else if (config.isPreferAccelerator()) {
+            log.warn("mica.ppocr.prefer-accelerator=true 与 ocr.accelerator={} 不一致，以 ocr.accelerator 为准，" +
+                    "Starter 默认引擎闲置", accelerator);
         } else {
-            log.info("加速模式 {} 已开启：各档引擎由 AcceleratedPPOcrV6Engine 按需创建（解析为 {}），" +
-                    "Starter 默认引擎闲置；注意加速后不再保证 bit-exact", accelerator, accelerator.resolve());
+            log.info("Starter 默认引擎（CPU）闲置，各档引擎按加速配置懒加载");
         }
     }
 
@@ -93,7 +108,7 @@ public class OcrEngineManager implements DisposableBean {
         return defaultTier;
     }
 
-    /** 当前实例启动后生效的加速策略（CPU / AUTO / COREML / CUDA）。 */
+    /** 配置的加速策略（CPU / AUTO / COREML / CUDA）。 */
     public Accelerator getAccelerator() {
         return accelerator;
     }
@@ -162,16 +177,14 @@ public class OcrEngineManager implements DisposableBean {
             log.info("加载 {} 档 PP-OCRv6 模型: {}（accelerator={}）", key, dir, accelerator);
             // yml（含 PPOCRPropertiesCustomizer）生效后的调参作为公共基底，toBuilder 全量继承
             // （含 doc_ori 共享模型与 1.2.x 新增的 arena / memory pattern / execMode），
-            // 仅模型路径按档次替换
+            // 仅加速开关（由 ocr.accelerator 决定）与模型路径按档次替换
             PPOcrV6Config config = baseConfig.toBuilder()
+                    .preferAccelerator(preferAccelerator)
                     .detModelPath(dir.resolve("det.onnx").toString())
                     .recModelPath(dir.resolve("rec.onnx").toString())
                     .recCharDictPath(dir.resolve("dict.txt").toString())
                     .build();
-            if (accelerator == Accelerator.CPU) {
-                return new LibraryEngineAdapter(new PPOcrV6Engine(config), false);
-            }
-            return new AcceleratedPPOcrV6Engine(config, accelerator);
+            return new LibraryEngineAdapter(new PPOcrV6Engine(config), false);
         });
     }
 
@@ -195,7 +208,7 @@ public class OcrEngineManager implements DisposableBean {
     private record LibraryEngineAdapter(PPOcrV6Engine delegate, boolean managedExternally) implements OcrEngine {
 
         /**
-         * 委托执行。保持与本项目自研加速引擎一致的 run 语义，不在这里做状态变更。
+         * 委托执行，不在这里做状态变更。
          * managedExternally=true 时不在本类调用 close，避免与 Spring 生命周期重复关闭。
          */
         @Override

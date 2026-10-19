@@ -26,7 +26,7 @@
 | `doc-orientation-thresh` | 0.4 | 方向分类 | 方向判定置信度阈值，低于阈值按 0° 处理（1.2.x 起由 0.3 上调） |
 | `intra-op-num-threads` | 1 | ONNX Runtime | 单个算子内部并行线程数——CPU 上最主要的提速旋钮 |
 | `inter-op-num-threads` | 1 | ONNX Runtime | 算子间并行，OCR 模型是顺序图，**保持 1 即可** |
-| `prefer-accelerator` | false | ONNX Runtime | true 时按 CoreML > CUDA > CPU 自动选择（见第四节的重要限制） |
+| `prefer-accelerator` | false | ONNX Runtime | true 时按 CoreML > CUDA > CPU 自动选择；本项目由 `ocr.accelerator` 统一控制，勿直接改（见第四节） |
 | `enable-cpu-mem-arena` | false | ONNX Runtime | 1.2.x 新增：CPU 内存 arena。输入尺寸多变时 arena 高水位持续抬升易致容器 OOM，上游默认关闭（吞吐约 -10%） |
 | `enable-memory-pattern` | false | ONNX Runtime | 1.2.x 新增：内存模式优化，与 arena 同步开关 |
 | `exec-mode` | `SEQUENTIAL` | ONNX Runtime | 1.2.x 新增：算子执行模式，OCR 顺序图保持默认即可 |
@@ -181,9 +181,22 @@ B 策略在高并发时会争核导致长尾，建议配合信号量把并发识
    推理会话永远走 CPU。实测开关前后耗时完全一致，且日志会误导性地打出
    `CoreMLExecutionProvider`。（已整理 issue 反馈上游。）**1.2.2 已修复**：新增
    `OrtProviders.apply()` 真正注册 EP（gitee #IKDEZI），但仍只能按 CoreML > CUDA 自动选择。
-2. 因此本项目内置 **`AcceleratedPPOcrV6Engine`**（逐行移植原版引擎 + 修复 EP 应用），
-   由 `ocr.accelerator: cpu | auto | coreml | cuda` 控制；`cpu`（默认）走库原版引擎，
-   保持 bit-exact。生效配置可查 `/api/ocr/info` 的 `accelerator` 字段。
+2. **本项目由 `ocr.accelerator: cpu | auto | coreml | cuda` 控制**，推理统一走官方
+   `PPOcrV6Engine`（1.2.2 之前项目内置的修复版引擎 `AcceleratedPPOcrV6Engine` 已移除）。
+   启动时按 `OrtEnvironment.getAvailableProviders()` 判定后映射为各档 `preferAccelerator`：
+
+   | `ocr.accelerator` | macOS（CPU 包，含 CoreML） | Linux + `-Pgpu`（含 CUDA） | Linux CPU 包 |
+   |---|---|---|---|
+   | `cpu`（默认） | CPU | CPU | CPU |
+   | `auto` | CoreML | CUDA | CPU |
+   | `coreml` | CoreML | CPU + 告警 | CPU + 告警 |
+   | `cuda` | **CPU + 告警** | CUDA | CPU + 告警 |
+
+   关键是 `cuda` 在 Mac 上：上游只会自动选、且 CoreML 优先，若直接开 `preferAccelerator`
+   会被选成 CoreML（见下一条，慢且掉精度），所以判定为不可用并回落 CPU。CUDA 已注册但缺
+   CUDA/cuDNN 动态库时，上游注册失败同样告警回落 CPU。`cpu` 保持 bit-exact。
+   生效配置可查 `/api/ocr/info` 的 `accelerator` 字段（配置原值），实际 EP 以启动日志
+   `ONNX Runtime 已注册: …` 为准。
 3. **macOS CoreML：能跑通但反而大幅变慢，不建议开启**。Apple Silicon 实测
    （2988×2199 行驶证图）：tiny 3.5s（CPU 1.0s）、small 24.9s（CPU 2.8s）、medium 超 30s
    超时。ORT 日志给出了原因：det/rec 模型图被切成 19~29 个分区（190 节点中 169 个受支持），

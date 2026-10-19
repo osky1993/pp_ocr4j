@@ -31,7 +31,8 @@ public class OcrProperties {
 
     /**
      * 推理加速器：cpu（默认，bit-exact）/ auto / coreml（macOS）/ cuda（NVIDIA，需 -Pgpu）。
-     * 非 cpu 时使用本项目 AcceleratedPPOcrV6Engine（修复上游 provider 不生效缺陷）。
+     * 启动期按本机可用 provider 解析后映射为上游 preferAccelerator（见 {@link Accelerator#resolve()}），
+     * 请求的加速器不可用时回落 cpu；优先于 mica.ppocr.prefer-accelerator。
      */
     private String accelerator = "cpu";
 
