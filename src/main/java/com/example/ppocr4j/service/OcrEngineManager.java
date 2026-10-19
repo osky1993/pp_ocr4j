@@ -160,24 +160,10 @@ public class OcrEngineManager implements DisposableBean {
         return engines.computeIfAbsent(t, key -> {
             Path dir = modelRoot.resolve(key);
             log.info("加载 {} 档 PP-OCRv6 模型: {}（accelerator={}）", key, dir, accelerator);
-            PPOcrV6Config config = PPOcrV6Config.builder()
-                    // yml（含 PPOCRPropertiesCustomizer）生效后的调参作为公共基底
-                    .detLimitSideLen(baseConfig.getDetLimitSideLen())
-                    .detLimitType(baseConfig.getDetLimitType())
-                    .detMaxSideLimit(baseConfig.getDetMaxSideLimit())
-                    .detThresh(baseConfig.getDetThresh())
-                    .detBoxThresh(baseConfig.getDetBoxThresh())
-                    .detUnclipRatio(baseConfig.getDetUnclipRatio())
-                    .recImageShape(baseConfig.getRecImageShape())
-                    .recBatchSize(baseConfig.getRecBatchSize())
-                    .preferAccelerator(baseConfig.isPreferAccelerator())
-                    .intraOpNumThreads(baseConfig.getIntraOpNumThreads())
-                    .interOpNumThreads(baseConfig.getInterOpNumThreads())
-                    // 1.1.1+ 文档方向分类：doc_ori 模型全档共享，随基底配置传递
-                    .useDocOrientationClassify(baseConfig.isUseDocOrientationClassify())
-                    .docOrientationModelPath(baseConfig.getDocOrientationModelPath())
-                    .docOrientationThresh(baseConfig.getDocOrientationThresh())
-                    // 仅模型路径按档次替换
+            // yml（含 PPOCRPropertiesCustomizer）生效后的调参作为公共基底，toBuilder 全量继承
+            // （含 doc_ori 共享模型与 1.2.x 新增的 arena / memory pattern / execMode），
+            // 仅模型路径按档次替换
+            PPOcrV6Config config = baseConfig.toBuilder()
                     .detModelPath(dir.resolve("det.onnx").toString())
                     .recModelPath(dir.resolve("rec.onnx").toString())
                     .recCharDictPath(dir.resolve("dict.txt").toString())

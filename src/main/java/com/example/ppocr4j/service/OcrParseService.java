@@ -6,6 +6,7 @@ import com.example.ppocr4j.parser.PassportParser;
 import com.example.ppocr4j.parser.validate.FieldValidation;
 import com.example.ppocr4j.parser.validate.ParseValidator;
 import com.example.ppocr4j.web.ErrorCode;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Result;
@@ -24,7 +25,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * 证件/票据字段级结构化提取（基于 mica-ppocr-structured 1.1.x）。
+ * 证件/票据字段级结构化提取（基于 mica-ppocr-structured 1.2.x）。
  *
  * <p>识别走本项目自己的流水线（{@link OcrService}：档次选择、并发闸门、像素校验、
  * doc_ori 自动转正），拿到 OCR 原始结果后再喂给对应解析器的
@@ -64,7 +65,8 @@ public class OcrParseService {
                            HkMacaoPermitParser hkMacaoPermitParser,
                            ParseValidator parseValidator) {
         this.ocrService = ocrService;
-        this.objectMapper = objectMapper;
+        // 独立副本挂 mixin，不影响全局 ObjectMapper 的序列化行为
+        this.objectMapper = objectMapper.copy().addMixIn(BaseStructuredResult.class, BusinessFieldsOnly.class);
         this.parseValidator = parseValidator;
         // LinkedHashMap 保序：/api/ocr/parse/types 按此顺序返回
         Map<String, Function<List<PPOcrV6Result>, ? extends BaseStructuredResult>> map = new LinkedHashMap<>();
@@ -122,15 +124,22 @@ public class OcrParseService {
     }
 
     /**
-     * 把解析结果对象转成「纯业务字段」Map：剔除基类的 rawResults / fieldBoxes
-     * （分别以 results / fieldBoxes 独立字段返回，避免响应体重复膨胀）。
+     * 把解析结果对象转成「纯业务字段」Map：基类的 rawResults / fieldBoxes 由 mixin 在序列化时
+     * 直接跳过（分别以 results / fieldBoxes 独立字段返回，避免响应体重复膨胀）。
      */
     private Map<String, Object> extractFields(BaseStructuredResult parsed) {
-        Map<String, Object> fields = objectMapper.convertValue(parsed, new TypeReference<>() {});
-        fields.remove("rawResults");
-        fields.remove("fieldBoxes");
-        return fields;
+        return objectMapper.convertValue(parsed, new TypeReference<>() {});
     }
+
+    /**
+     * 序列化时忽略基类的 rawResults / fieldBoxes。
+     *
+     * <p>必须在序列化阶段跳过而不是转完再 remove：mica-ppocr 1.2.x 把 {@link PPOcrV6Result}
+     * 从 record 改成了 lombok fluent accessor 的普通类（{@code text()} 而非 {@code getText()}），
+     * Jackson 找不到任何属性会直接抛 "No serializer found"。</p>
+     */
+    @JsonIgnoreProperties({"rawResults", "fieldBoxes"})
+    private abstract static class BusinessFieldsOnly {}
 
     /**
      * 解析产出。

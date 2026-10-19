@@ -8,7 +8,7 @@
 > 现已按「内部可信接口调用的独立组件」定位补齐工程化能力。
 >
 > 注意：文章中依赖坐标写的是 `net.dreamlu.mica.ai`，Maven Central 上实际发布的 groupId 是
-> **`net.dreamlu`**（本项目版本 `1.1.3`）；`PPOcrV6Result` 实际位于
+> **`net.dreamlu`**（本项目版本 `1.2.3`）；`PPOcrV6Result` 实际位于
 > `net.dreamlu.mica.ai.ppocr.engine` 包（文章写的 `config` 包有误）。
 
 ## 能力一览
@@ -261,13 +261,15 @@ journalctl -u pp-ocr4j -f
 
 ## GPU 加速
 
-mica-ppocr 1.1.3 的 `prefer-accelerator` 仍存在缺陷（provider 只记日志、未应用到会话，任何平台
-都是空操作），因此本项目内置了修复版引擎 `AcceleratedPPOcrV6Engine`，由 `ocr.accelerator` 控制：
+mica-ppocr 1.2.2 之前的 `prefer-accelerator` 存在缺陷（provider 只记日志、未应用到会话，任何平台
+都是空操作），因此本项目内置了修复版引擎 `AcceleratedPPOcrV6Engine`，由 `ocr.accelerator` 控制。
+上游已在 1.2.2 修复（gitee #IKDEZI），但仍只能自动选择、不能显式指定 coreml/cuda，本项目暂保留修复版引擎：
 
 - **NVIDIA CUDA**（Linux/Windows，CUDA 11.8 + cuDNN 8，对应 ORT 1.18）：`mvn -Pgpu package` 构建
   （切换 `onnxruntime_gpu` 依赖）+ 运行时 `--ocr.accelerator=cuda`；已完成构建链路，
   推理效果待 NVIDIA 真机压测确认；
 - **macOS CoreML**：功能可用但实测反而大幅变慢（模型图分区过碎 + 动态尺寸反复编译），
+  且字段准确率明显下降（护照样图 66.7%、关键字段出错，1.1.3 与 1.2.3 均如此），
   **不建议开启**，Mac 上保持 `cpu`——详见 [USAGE.md 第四节](USAGE.md#四gpu--加速器的真实情况)；
 - 开启任何加速器后不再保证与 Python 参考实现 bit-exact；生效配置见 `/api/ocr/info`。
 

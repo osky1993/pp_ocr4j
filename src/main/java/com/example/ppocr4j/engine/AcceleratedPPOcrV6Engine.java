@@ -25,6 +25,7 @@ import com.example.ppocr4j.service.OcrEngine;
 import net.dreamlu.mica.ai.ppocr.config.PPOcrV6Config;
 import net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Result;
 import net.dreamlu.mica.ai.ppocr.postprocessor.CtcLabelDecoder;
+import net.dreamlu.mica.ai.ppocr.postprocessor.DbDetParams;
 import net.dreamlu.mica.ai.ppocr.postprocessor.DbPostProcessor;
 import net.dreamlu.mica.ai.ppocr.postprocessor.DocOrientationPostprocessor;
 import net.dreamlu.mica.ai.ppocr.preprocessor.DetectionPreprocessor;
@@ -51,11 +52,14 @@ import java.util.function.Consumer;
 /**
  * 加速版 PP-OCRv6 引擎：移植自 mica-ppocr-core <b>1.1.3</b> 的
  * {@code net.dreamlu.mica.ai.ppocr.engine.PPOcrV6Engine}（Apache 2.0），
- * 含 1.1.1 引入的文档方向分类（doc_ori）能力。
+ * 含 1.1.1 引入的文档方向分类（doc_ori）能力；已同步 1.2.x 的 {@code DbDetParams} 构造与
+ * SessionOptions 通用配置（arena / memory pattern / execMode）。
  *
  * <p>与原版唯一的实质差异：修复了「provider 只记日志、从未应用到 SessionOptions」的缺陷——
  * 本类会按 {@link Accelerator} 真正调用 {@code addCoreML()} / {@code addCUDA()}，
- * 失败时告警并回落 CPU。推理流水线逻辑与原版 runMat 保持一致，便于上游修复后切回官方实现。</p>
+ * 失败时告警并回落 CPU。推理流水线逻辑与原版 runMat 保持一致，便于上游修复后切回官方实现。
+ * 上游已在 1.2.2 修复该缺陷（{@code OrtProviders.apply()}，gitee #IKDEZI），但仅支持
+ * {@code preferAccelerator} 自动选择、不能显式指定 coreml/cuda，是否切回官方实现待评估。</p>
  *
  * <p>注意：启用 CoreML/CUDA 后不再保证与 Python 参考实现 bit-exact。</p>
  */
@@ -121,6 +125,14 @@ public final class AcceleratedPPOcrV6Engine implements OcrEngine {
 			} catch (OrtException e) {
 				log.warn("设置线程数失败，使用默认值: {}", e.getMessage());
 			}
+			// 1.2.x 同步：与上游 OrtProviders.apply() 一致，arena / memory pattern 默认关闭（上游 issue #14 防 OOM）
+			try {
+				opts.setCPUArenaAllocator(config.isEnableCpuMemArena());
+				opts.setMemoryPatternOptimization(config.isEnableMemoryPattern());
+				opts.setExecutionMode(config.getExecMode());
+			} catch (OrtException e) {
+				log.warn("设置 arena / memory pattern / execution mode 失败，使用默认值: {}", e.getMessage());
+			}
 
 			// 原版缺陷修复点：把加速器真正应用到会话选项
 			Accelerator resolved = accelerator.resolve();
@@ -150,8 +162,7 @@ public final class AcceleratedPPOcrV6Engine implements OcrEngine {
 			this.detOutputName = detSession.getOutputNames().iterator().next();
 			this.recOutputName = recSession.getOutputNames().iterator().next();
 			this.detPre = new DetectionPreprocessor(config.getDetLimitSideLen(), config.getDetLimitType(), config.getDetMaxSideLimit());
-			this.detPost = new DbPostProcessor(config.getDetThresh(), config.getDetBoxThresh(), config.getDetUnclipRatio(),
-				1000, 3);
+			this.detPost = new DbPostProcessor(DbDetParams.of(config.getDetThresh(), config.getDetBoxThresh(), config.getDetUnclipRatio()));
 			this.recPre = new RecognitionPreprocessor(config.getRecImageShape()[1], 320, 3200);
 			this.recPost = new CtcLabelDecoder(config.getRecCharDictPath());
 			this.recBatchSize = config.getRecBatchSize();
